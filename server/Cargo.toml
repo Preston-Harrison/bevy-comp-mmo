@@ -1,0 +1,11 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../common" }
+bincode = { workspace = true }
+bevy = { workspace = true }
+bevy_renet = { workspace = true }
+serde = { workspace = true }

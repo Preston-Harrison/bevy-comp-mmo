@@ -1,0 +1,12 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bincode = { workspace = true }
+bevy = { workspace = true }
+bevy_renet = { workspace = true }
+serde = { workspace = true }
+clap = { version = "4.5.0", features = ["derive"] }
+common = { path = "../common" }
