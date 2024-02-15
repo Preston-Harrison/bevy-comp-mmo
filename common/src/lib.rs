@@ -51,13 +51,16 @@ pub struct PlayerInput {
 pub struct IdPlayerInput(pub PlayerId, pub PlayerInput);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Reliable Ordered Message from Server
 pub enum ROMFromServer {
     PlayerConnected(PlayerId),
     PlayerDisconnected(PlayerId),
+    GameSync(GameSync),
 }
 impl_bytes!(ROMFromServer);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Reliable Ordered Message from Client
 pub enum ROMFromClient {
     PlayerLogin(PlayerLogin),
 }
@@ -72,16 +75,21 @@ pub struct PlayerLogin {
 pub struct InputBuffer(pub HashMap<PlayerId, PlayerInput>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Unreliable Message from Server
 pub enum UMFromServer {
     IdPlayerInput(IdPlayerInput),
-    Sync {
-        players: HashMap<PlayerId, Transform>,
-        frame: u64,
-    }
+    GameSync(GameSync),
 }
 impl_bytes!(UMFromServer);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSync {
+    pub frame: u64,
+    pub players: HashMap<PlayerId, Transform>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Unreliable Message from Client
 pub enum UMFromClient {
     PlayerInput(PlayerInput),
 }
@@ -90,7 +98,11 @@ impl_bytes!(UMFromClient);
 #[derive(Resource, Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct FrameCount(pub u64);
 
-pub fn process_input(input_buffer: &InputBuffer, players: &mut [(&Player, &mut Transform)], delta_time: f32) {
+pub fn process_input(
+    input_buffer: &InputBuffer,
+    players: &mut [(&Player, &mut Transform)],
+    delta_time: f32,
+) {
     for (player, transform) in players.iter_mut() {
         if let Some(input) = input_buffer.0.get(&player.id) {
             transform.translation.x += input.x as f32 * player.speed * delta_time;

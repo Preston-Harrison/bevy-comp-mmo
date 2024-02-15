@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
-use common::{bundles::PlayerLogicBundle, Player, PlayerId, PlayerLogin, ROMFromClient, ROMFromServer};
+use common::{
+    bundles::PlayerLogicBundle, Player, PlayerId, PlayerLogin, ROMFromClient, ROMFromServer,
+};
 
-use crate::{spawn::spawn_remote_player, AppState, LocalPlayer};
+use crate::{rollback::apply_game_sync, spawn::spawn_remote_player, AppState, LocalPlayer};
 
 pub fn handle_login(
     mut client: ResMut<RenetClient>,
@@ -50,6 +52,10 @@ pub fn handle_game_events(
                         commands.entity(entity).despawn_recursive();
                     }
                 }
+            }
+            ROMFromServer::GameSync(game_sync) => {
+                let players_q = players_q.iter().map(|(e, p)| (e, p)).collect::<Vec<_>>();
+                apply_game_sync(&mut commands, game_sync, &players_q);
             }
         }
     }

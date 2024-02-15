@@ -8,7 +8,7 @@ use bevy_renet::{
     RenetServerPlugin,
 };
 use common::{
-    bundles::PlayerLogicBundle, FrameCount, IdPlayerInput, InputBuffer, Player, PlayerId,
+    bundles::PlayerLogicBundle, FrameCount, GameSync, IdPlayerInput, InputBuffer, Player, PlayerId,
     ROMFromClient, ROMFromServer, UMFromClient, UMFromServer,
 };
 use std::{net::UdpSocket, time::SystemTime};
@@ -83,13 +83,13 @@ fn sync_game(
     if timer.0.finished() {
         server.broadcast_message(
             DefaultChannel::Unreliable,
-            UMFromServer::Sync {
+            UMFromServer::GameSync(GameSync {
                 players: player_q
                     .iter()
                     .map(|(player, transform)| (player.id, transform.clone()))
                     .collect(),
                 frame: 0,
-            },
+            }),
         );
     }
 }
@@ -153,13 +153,13 @@ fn receive_message_system(
             server.send_message(
                 client_id,
                 DefaultChannel::Unreliable,
-                UMFromServer::Sync {
+                UMFromServer::GameSync(GameSync {
                     players: query
                         .iter()
                         .map(|(player, transform)| (player.id, transform.clone()))
                         .collect(),
                     frame: frame_count.0,
-                },
+                }),
             );
         }
     }

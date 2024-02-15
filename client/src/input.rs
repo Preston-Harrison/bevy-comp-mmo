@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{IdPlayerInput, InputBuffer, Player, PlayerInput, UMFromClient, UMFromServer};
 
-use crate::{spawn::spawn_remote_player, LocalPlayer};
+use crate::{rollback::apply_game_sync, LocalPlayer};
 
 pub fn read_inputs(
     mut commands: Commands,
@@ -42,15 +42,9 @@ pub fn read_inputs(
                 let IdPlayerInput(player_id, player_input) = id_player_input;
                 input_buffer.0.insert(player_id, player_input);
             }
-            UMFromServer::Sync { players, frame } => {
-                for (player_id, transform) in players {
-                    let Some((entity, _)) = players_q.iter().find(|(_, p)| p.id == player_id)
-                    else {
-                        spawn_remote_player(&mut commands, player_id, transform);
-                        continue;
-                    };
-                    commands.entity(entity).insert(transform);
-                }
+            UMFromServer::GameSync(game_sync) => {
+                let players_q = players_q.iter().map(|(e, p)| (e, p)).collect::<Vec<_>>();
+                apply_game_sync(&mut commands, game_sync, &players_q);
             }
         }
     }
