@@ -10,14 +10,18 @@ pub struct TransformRollback {
 }
 
 impl TransformRollback {
-    fn get_at_frame(&self, frame: u64) -> HashMap<Entity, Transform> {
+    fn get_transform_n_frames_ago(&self, n_frames: u64) -> HashMap<Entity, Transform> {
         let mut result = HashMap::default();
         for (entity, history) in self.history.iter() {
-            if let Some(transform) = history.get(frame as usize) {
+            if let Some(transform) = history.get(n_frames as usize) {
                 result.insert(*entity, *transform);
             }
         }
         result
+    }
+
+    fn get_latest(&self) -> HashMap<Entity, Transform> {
+        self.get_transform_n_frames_ago(0)
     }
 
     fn rollback_frames(&mut self, frame: u64) {
@@ -105,26 +109,47 @@ pub fn rollback(
         .0
         .map(|rollback_to_frame| frame.0 - rollback_to_frame)
     else {
-        request.0 = None;
         return;
     };
 
-    info!("Rolling back {} frames", frames);
-    transform_rollback.rollback_frames(frames);
+    resimulate_last_n_frames(
+        frames,
+        transform_q
+            .iter_mut()
+            .map(|(e, t)| (e, t.into_inner()))
+            .collect::<Vec<_>>()
+            .as_mut_slice(),
+        player_q.iter().collect::<Vec<_>>().as_slice(),
+        &mut transform_rollback,
+        &input_rollback,
+    );
 
-    let mut current_transforms = transform_rollback.get_at_frame(frames);
+    request.0 = None;
+}
 
-    for frame in 0..frames {
+pub fn resimulate_last_n_frames(
+    last_n_frames: u64,
+    current_transforms: &mut [(Entity, &mut Transform)],
+    current_players: &[(Entity, &Player)],
+    transform_rollback: &mut TransformRollback,
+    input_rollback: &InputRollback,
+) {
+    info!("Rolling back {} frames", last_n_frames);
+    transform_rollback.rollback_frames(last_n_frames);
+
+    let mut resimulated_transforms = transform_rollback.get_latest();
+
+    for frame in 0..last_n_frames {
         let Some(input_for_frame) = input_rollback.history.get(frame as usize) else {
             break;
         };
 
-        let mut player_transforms = player_q
+        let mut player_transforms = current_players
             .iter()
             .filter_map(|(entity, player)| {
-                current_transforms
-                    .get(&entity)
-                    .map(|transform| (entity, (player, *transform)))
+                resimulated_transforms
+                    .get(entity)
+                    .map(|transform| (entity, (*player, *transform)))
             })
             .collect::<HashMap<_, _>>();
 
@@ -139,16 +164,15 @@ pub fn rollback(
         );
 
         for (entity, (_player, transform)) in player_transforms.iter() {
-            current_transforms.insert(*entity, *transform);
+            resimulated_transforms.insert(**entity, *transform);
         }
     }
 
-    for (entity, mut transform) in transform_q.iter_mut() {
-        if let Some(new_transform) = current_transforms.get(&entity) {
-            *transform = *new_transform;
+    for (entity, transform) in current_transforms.iter_mut() {
+        if let Some(new_transform) = resimulated_transforms.get(entity) {
+            **transform = *new_transform;
         }
     }
-    request.0 = None;
 }
 
 pub fn next_input_frame(mut input_rollback: ResMut<InputRollback>, frame: Res<FrameCount>) {

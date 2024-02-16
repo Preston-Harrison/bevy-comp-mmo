@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
-use common::{rollback::InputRollback, FrameCount, IdPlayerInput, Player, RawPlayerInput, UMFromClient, UMFromServer};
+use common::{
+    rollback::InputRollback, FrameCount, IdPlayerInput, Player, RawPlayerInput, UMFromClient,
+    UMFromServer,
+};
 
 use crate::{messages::ServerMessageBuffer, LocalPlayer};
 
@@ -47,7 +50,7 @@ pub fn broadcast_local_input(
     input_rollback: Res<InputRollback>,
     local_player: Res<LocalPlayer>,
     mut client: ResMut<RenetClient>,
-    frame: Res<FrameCount>
+    frame: Res<FrameCount>,
 ) {
     let local_input = input_rollback.get_latest().0.get(&local_player.id);
     if let Some(input) = local_input {

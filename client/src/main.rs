@@ -8,7 +8,11 @@ use bevy_renet::{
     RenetClientPlugin,
 };
 use clap::Parser;
-use common::{rollback::RollbackPlugin, schedule::{GameSchedule, GameSchedulePlugin}, PlayerId, ServerEntityMap};
+use common::{
+    rollback::RollbackPlugin,
+    schedule::{GameSchedule, GameSchedulePlugin},
+    PlayerId, ServerEntityMap,
+};
 use events::handle_login;
 use messages::ServerMessageBuffer;
 use std::{net::UdpSocket, time::SystemTime};

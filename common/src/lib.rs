@@ -56,10 +56,7 @@ pub struct RawPlayerInput {
 
 impl RawPlayerInput {
     pub fn at_frame(&self, frame: u64) -> FramedPlayerInput {
-        FramedPlayerInput {
-            raw: *self,
-            frame,
-        }
+        FramedPlayerInput { raw: *self, frame }
     }
 }
 
@@ -70,8 +67,8 @@ pub struct FramedPlayerInput {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct IdPlayerInput{
-    pub player_id: PlayerId, 
+pub struct IdPlayerInput {
+    pub player_id: PlayerId,
     pub input: FramedPlayerInput,
 }
 
