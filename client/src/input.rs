@@ -1,17 +1,18 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
-use common::{IdPlayerInput, InputBuffer, Player, PlayerInput, UMFromClient, UMFromServer};
+use common::{rollback::InputRollback, FrameCount, IdPlayerInput, Player, RawPlayerInput, UMFromClient, UMFromServer};
 
 use crate::{messages::ServerMessageBuffer, LocalPlayer};
 
 pub fn read_inputs(
-    mut input_buffer: ResMut<InputBuffer>,
+    mut input_rollback: ResMut<InputRollback>,
     local_player: Res<LocalPlayer>,
     keyboard_input: Res<Input<KeyCode>>,
     server_messages: Res<ServerMessageBuffer>,
+    frame: Res<FrameCount>,
 ) {
     // Collect local player input.
-    let mut input = PlayerInput::default();
+    let mut input = RawPlayerInput::default();
     if keyboard_input.pressed(KeyCode::W) {
         input.y += 1;
     }
@@ -25,15 +26,17 @@ pub fn read_inputs(
         input.x += 1;
     }
 
-    if input != PlayerInput::default() {
-        input_buffer.0.insert(local_player.id, input);
+    if input != RawPlayerInput::default() {
+        input_rollback.accept_input(IdPlayerInput {
+            player_id: local_player.id,
+            input: input.at_frame(frame.0),
+        });
     }
 
     for message in server_messages.unreliable.iter() {
         match message {
             UMFromServer::IdPlayerInput(id_player_input) => {
-                let IdPlayerInput(player_id, player_input) = id_player_input;
-                input_buffer.0.insert(*player_id, *player_input);
+                input_rollback.accept_input(*id_player_input);
             }
             _ => {}
         }
@@ -41,22 +44,23 @@ pub fn read_inputs(
 }
 
 pub fn broadcast_local_input(
-    input_buffer: ResMut<InputBuffer>,
+    input_rollback: Res<InputRollback>,
     local_player: Res<LocalPlayer>,
     mut client: ResMut<RenetClient>,
+    frame: Res<FrameCount>
 ) {
-    let local_input = input_buffer.0.get(&local_player.id);
+    let local_input = input_rollback.get_latest().0.get(&local_player.id);
     if let Some(input) = local_input {
         info!("Broadcasting input {:?}", input);
         client.send_message(
             DefaultChannel::Unreliable,
-            UMFromClient::PlayerInput(*input),
+            UMFromClient::PlayerInput(input.at_frame(frame.0)),
         );
     }
 }
 
 pub fn process_inputs(
-    mut input_buffer: ResMut<InputBuffer>,
+    input_rollback: Res<InputRollback>,
     mut players: Query<(&Player, &mut Transform)>,
     time: Res<Time>,
 ) {
@@ -64,7 +68,5 @@ pub fn process_inputs(
         .iter_mut()
         .map(|(pos, transform)| (pos, transform.into_inner()));
 
-    common::process_input(&input_buffer, players, time.delta_seconds());
-
-    input_buffer.0.clear();
+    common::process_input(&input_rollback.get_latest(), players, time.delta_seconds());
 }

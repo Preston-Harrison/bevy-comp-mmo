@@ -8,7 +8,7 @@ use bevy_renet::{
     RenetClientPlugin,
 };
 use clap::Parser;
-use common::{InputBuffer, PlayerId, ServerEntityMap};
+use common::{rollback::RollbackPlugin, schedule::{GameSchedule, GameSchedulePlugin}, PlayerId, ServerEntityMap};
 use events::handle_login;
 use messages::ServerMessageBuffer;
 use std::{net::UdpSocket, time::SystemTime};
@@ -39,9 +39,12 @@ fn main() {
     app.add_plugins(DefaultPlugins)
         .add_state::<AppState>()
         .add_systems(Startup, handle_login.run_if(in_state(AppState::MainMenu)))
+        .add_plugins(GameSchedulePlugin)
+        .add_plugins(RollbackPlugin)
         .add_systems(
             FixedUpdate,
             (
+                common::rollback::next_input_frame,
                 messages::receive_messages,
                 events::handle_game_events,
                 input::read_inputs,
@@ -49,9 +52,9 @@ fn main() {
                 input::process_inputs,
             )
                 .chain()
+                .in_set(GameSchedule::Main)
                 .run_if(in_state(AppState::InGame)),
         )
-        .init_resource::<InputBuffer>()
         .init_resource::<ServerMessageBuffer>()
         .init_resource::<ServerEntityMap>()
         .insert_resource(common::fixed_timestep_rate())

@@ -8,8 +8,11 @@ use bevy_renet::{
     RenetServerPlugin,
 };
 use common::{
-    bundles::PlayerLogicBundle, FrameCount, GameSync, IdPlayerInput, InputBuffer, Player, PlayerId,
-    ROMFromClient, ROMFromServer, ServerObject, UMFromClient, UMFromServer,
+    bundles::PlayerLogicBundle,
+    rollback::{InputRollback, RollbackPlugin},
+    schedule::{GameSchedule, GameSchedulePlugin},
+    FrameCount, GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer,
+    ServerObject, UMFromClient, UMFromServer,
 };
 use std::{
     net::UdpSocket,
@@ -41,9 +44,11 @@ fn main() {
     app.add_plugins(LogPlugin::default());
     app.add_plugins(RenetServerPlugin);
     app.init_resource::<Clients>();
-    app.init_resource::<InputBuffer>();
     app.init_resource::<FrameCount>();
     app.init_resource::<GameSyncTimer>();
+
+    app.add_plugins(GameSchedulePlugin);
+    app.add_plugins(RollbackPlugin);
 
     let server = RenetServer::new(ConnectionConfig::default());
     app.insert_resource(server);
@@ -73,7 +78,8 @@ fn main() {
             process_inputs,
             handle_events_system,
         )
-            .chain(),
+            .chain()
+            .in_set(GameSchedule::Main),
     );
     app.run();
 }
@@ -116,7 +122,7 @@ fn receive_message_system(
     mut clients: ResMut<Clients>,
     transform_q: Query<(&ServerObject, &Transform)>,
     player_q: Query<(&ServerObject, &Player)>,
-    mut input_buffer: ResMut<InputBuffer>,
+    mut input_rollback: ResMut<InputRollback>,
     frame_count: Res<FrameCount>,
 ) {
     for client_id in server.clients_id() {
@@ -127,14 +133,17 @@ fn receive_message_system(
             };
 
             match client_message {
-                UMFromClient::PlayerInput(player_input) => {
-                    info!("Receiving input {:?}", player_input);
+                UMFromClient::PlayerInput(framed_input) => {
+                    info!("Receiving input {:?}", framed_input);
                     let Some(player_id) = clients.players.get(&client_id) else {
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
-                    input_buffer.0.insert(*player_id, player_input);
-                    let id_input = IdPlayerInput(*player_id, player_input);
+                    let id_input = IdPlayerInput {
+                        player_id: *player_id,
+                        input: framed_input,
+                    };
+                    input_rollback.accept_input(id_input);
                     server.broadcast_message_except(
                         client_id,
                         DefaultChannel::Unreliable,
@@ -228,7 +237,7 @@ fn handle_events_system(
 }
 
 fn process_inputs(
-    mut input_buffer: ResMut<InputBuffer>,
+    input_rollback: Res<InputRollback>,
     mut players: Query<(&Player, &mut Transform)>,
     time: Res<Time>,
 ) {
@@ -236,6 +245,10 @@ fn process_inputs(
         .iter_mut()
         .map(|(pos, transform)| (pos, transform.into_inner()))
         .collect::<Vec<_>>();
-    common::process_input(&input_buffer, players.into_iter(), time.delta_seconds());
-    input_buffer.0.clear();
+
+    common::process_input(
+        input_rollback.get_latest(),
+        players.into_iter(),
+        time.delta_seconds(),
+    );
 }

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod bundles;
 pub mod rollback;
+pub mod schedule;
 
 pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 60.0;
 pub fn fixed_timestep_rate() -> Time<Fixed> {
@@ -48,13 +49,31 @@ impl Default for Player {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlayerInput {
+pub struct RawPlayerInput {
     pub x: i8,
     pub y: i8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdPlayerInput(pub PlayerId, pub PlayerInput);
+impl RawPlayerInput {
+    pub fn at_frame(&self, frame: u64) -> FramedPlayerInput {
+        FramedPlayerInput {
+            raw: *self,
+            frame,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct FramedPlayerInput {
+    pub raw: RawPlayerInput,
+    pub frame: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct IdPlayerInput{
+    pub player_id: PlayerId, 
+    pub input: FramedPlayerInput,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Reliable Ordered Message from Server
@@ -80,8 +99,8 @@ pub struct PlayerLogin {
     pub id: PlayerId,
 }
 
-#[derive(Resource, Clone, Default)]
-pub struct InputBuffer(pub HashMap<PlayerId, PlayerInput>);
+#[derive(Clone, Default)]
+pub struct InputBuffer(pub HashMap<PlayerId, RawPlayerInput>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Unreliable Message from Server
@@ -101,7 +120,7 @@ pub struct GameSync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Unreliable Message from Client
 pub enum UMFromClient {
-    PlayerInput(PlayerInput),
+    PlayerInput(FramedPlayerInput),
 }
 impl_bytes!(UMFromClient);
 

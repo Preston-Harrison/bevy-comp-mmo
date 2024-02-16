@@ -1,7 +1,7 @@
 use bevy::{prelude::*, utils::HashMap};
 use std::collections::VecDeque;
 
-use crate::{InputBuffer, Player, ServerObject};
+use crate::{schedule::GameSchedule, FrameCount, IdPlayerInput, InputBuffer, Player, ServerObject};
 
 #[derive(Resource, Default)]
 pub struct TransformRollback {
@@ -31,15 +31,39 @@ impl TransformRollback {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct InputRollback {
     history: VecDeque<InputBuffer>,
+    current_frame: u64,
 }
 
-pub fn track_rollbacks(
+impl InputRollback {
+    pub fn accept_input(&mut self, id_input: IdPlayerInput) {
+        let ix = self.current_frame - id_input.input.frame;
+        let Some(entry) = self.history.get_mut(ix as usize) else {
+            warn!("Input frame {} is too old", id_input.input.frame);
+            return;
+        };
+        entry.0.insert(id_input.player_id, id_input.input.raw);
+    }
+
+    pub fn next_frame(&mut self, current_frame: u64) {
+        self.history.push_front(InputBuffer::default());
+        self.current_frame = current_frame;
+    }
+
+    pub fn get_at_frame(&self, frame: u64) -> &InputBuffer {
+        let ix = self.current_frame - frame;
+        self.history.get(ix as usize).unwrap()
+    }
+
+    pub fn get_latest(&self) -> &InputBuffer {
+        self.history.front().unwrap()
+    }
+}
+
+pub fn track_rollbacks_components(
     transform_q: Query<(Entity, &Transform), With<ServerObject>>,
-    input_buffer: Res<InputBuffer>,
-    mut input_rollback: ResMut<InputRollback>,
     mut transform_rollback: ResMut<TransformRollback>,
 ) {
     let track_num = 10;
@@ -47,8 +71,6 @@ pub fn track_rollbacks(
         let history = transform_rollback.history.entry(entity).or_default();
         add_with_cap(history, *transform, track_num);
     }
-
-    add_with_cap(&mut input_rollback.history, input_buffer.clone(), track_num);
 }
 
 fn add_with_cap<T>(vec: &mut VecDeque<T>, item: T, cap: usize) {
@@ -58,17 +80,32 @@ fn add_with_cap<T>(vec: &mut VecDeque<T>, item: T, cap: usize) {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct RollbackRequest(Option<u64>);
+
+impl RollbackRequest {
+    pub fn request(&mut self, rollback_to_frame: u64) {
+        if let Some(current_frame) = self.0 {
+            self.0 = Some(rollback_to_frame.min(current_frame));
+        } else {
+            self.0 = Some(rollback_to_frame);
+        }
+    }
+}
 
 pub fn rollback(
     mut request: ResMut<RollbackRequest>,
     mut transform_q: Query<(Entity, &mut Transform)>,
     player_q: Query<(Entity, &Player)>,
     mut transform_rollback: ResMut<TransformRollback>,
+    frame: Res<FrameCount>,
     input_rollback: Res<InputRollback>,
 ) {
-    let Some(frames) = request.0 else {
+    let Some(frames) = request
+        .0
+        .map(|rollback_to_frame| frame.0 - rollback_to_frame)
+    else {
+        request.0 = None;
         return;
     };
 
@@ -112,4 +149,25 @@ pub fn rollback(
         }
     }
     request.0 = None;
+}
+
+pub fn next_input_frame(mut input_rollback: ResMut<InputRollback>, frame: Res<FrameCount>) {
+    input_rollback.next_frame(frame.0);
+}
+
+pub struct RollbackPlugin;
+
+pub const ROLLBACK_SYSTEM: &str = "rollback_system";
+
+impl Plugin for RollbackPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(FixedUpdate, next_input_frame.in_set(GameSchedule::Init))
+            .add_systems(
+                FixedUpdate,
+                (track_rollbacks_components, rollback).in_set(GameSchedule::Rollback),
+            )
+            .init_resource::<InputRollback>()
+            .init_resource::<RollbackRequest>()
+            .init_resource::<TransformRollback>();
+    }
 }
