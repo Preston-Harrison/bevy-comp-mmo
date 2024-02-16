@@ -1,12 +1,17 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    bundles::PlayerLogicBundle, Player, PlayerId, PlayerLogin, ROMFromClient, ROMFromServer,
+    bundles::PlayerLogicBundle, Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap,
+    ServerObject, UMFromServer,
 };
 
-use crate::{rollback::apply_game_sync, spawn::spawn_remote_player, AppState, LocalPlayer};
+use crate::{
+    messages::ServerMessageBuffer, rollback::apply_game_sync, spawn::get_player_sprite_bundle,
+    AppState, LocalPlayer,
+};
 
 pub fn handle_login(
+    mut commands: Commands,
     mut client: ResMut<RenetClient>,
     local_player: Res<LocalPlayer>,
     mut next_state: ResMut<NextState<AppState>>,
@@ -18,61 +23,62 @@ pub fn handle_login(
         }),
     );
     next_state.set(AppState::InGame);
+    commands.spawn(Camera2dBundle::default());
 }
 
 pub fn handle_game_events(
     mut commands: Commands,
-    mut client: ResMut<RenetClient>,
+    server_messages: Res<ServerMessageBuffer>,
     local_player: Res<LocalPlayer>,
-    players_q: Query<(Entity, &Player)>,
+    mut server_entity_map: ResMut<ServerEntityMap>,
+    player_q: Query<(Entity, &Player, &ServerObject)>,
 ) {
-    while let Some(message) = client.receive_message(DefaultChannel::ReliableOrdered) {
-        let event = match ROMFromServer::try_from(message) {
-            Ok(event) => event,
-            Err(err) => {
-                warn!("Failed to deserialize server event: {}", err);
-                continue;
-            }
-        };
-
-        match event {
-            ROMFromServer::PlayerConnected(player_id) => {
-                if player_id == local_player.id {
-                    info!("Spawning local player with id {}", player_id.0);
-                    spawn_local_player(&mut commands, player_id);
-                } else {
+    for message in server_messages.reliable_ordered.iter() {
+        match message {
+            ROMFromServer::PlayerConnected {
+                player_id,
+                server_object,
+            } => {
+                if player_id != &local_player.id {
                     info!("Spawning remote player with id {}", player_id.0);
-                    spawn_remote_player(&mut commands, player_id, Transform::default());
+                    let eid = commands
+                        .spawn(PlayerLogicBundle::new(*player_id, *server_object))
+                        .insert(get_player_sprite_bundle(true))
+                        .id();
+                    server_entity_map.0.insert(*server_object, eid);
                 }
             }
             ROMFromServer::PlayerDisconnected(player_id) => {
                 info!("Despawning remote player with id {}", player_id.0);
-                for (entity, player) in players_q.iter() {
-                    if player.id == player_id {
+                for (entity, player, server_object) in player_q.iter() {
+                    if &player.id == player_id {
                         commands.entity(entity).despawn_recursive();
+                        server_entity_map.0.remove(server_object);
                     }
                 }
             }
             ROMFromServer::GameSync(game_sync) => {
-                let players_q = players_q.iter().map(|(e, p)| (e, p)).collect::<Vec<_>>();
-                apply_game_sync(&mut commands, game_sync, &players_q);
+                apply_game_sync(
+                    &mut commands,
+                    game_sync,
+                    &mut server_entity_map,
+                    local_player.id,
+                );
             }
         }
     }
-}
 
-fn spawn_local_player(commands: &mut Commands, player_id: PlayerId) {
-    commands
-        .spawn(PlayerLogicBundle::new(player_id))
-        .insert(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.0, 1.0, 0.0),
-                custom_size: Some(Vec2::new(30.0, 30.0)),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(TransformBundle::default());
-
-    commands.spawn(Camera2dBundle::default());
+    for message in server_messages.unreliable.iter() {
+        match message {
+            UMFromServer::GameSync(game_sync) => {
+                apply_game_sync(
+                    &mut commands,
+                    game_sync,
+                    &mut server_entity_map,
+                    local_player.id,
+                );
+            }
+            _ => {}
+        }
+    }
 }

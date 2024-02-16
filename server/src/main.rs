@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, utils::HashMap};
 use bevy_renet::{
     renet::{
         transport::{NetcodeServerTransport, ServerAuthentication, ServerConfig},
@@ -9,9 +9,12 @@ use bevy_renet::{
 };
 use common::{
     bundles::PlayerLogicBundle, FrameCount, GameSync, IdPlayerInput, InputBuffer, Player, PlayerId,
-    ROMFromClient, ROMFromServer, UMFromClient, UMFromServer,
+    ROMFromClient, ROMFromServer, ServerObject, UMFromClient, UMFromServer,
 };
-use std::{net::UdpSocket, time::SystemTime};
+use std::{
+    net::UdpSocket,
+    time::{Duration, SystemTime},
+};
 
 #[derive(Resource, Default)]
 struct Clients {
@@ -23,13 +26,19 @@ struct GameSyncTimer(Timer);
 
 impl Default for GameSyncTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(3.0, TimerMode::Repeating))
+        Self(Timer::from_seconds(10.0, TimerMode::Repeating))
     }
 }
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(
+        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f32(
+            1.0 / 60.0,
+        ))),
+    );
+    app.insert_resource(common::fixed_timestep_rate());
+    app.add_plugins(LogPlugin::default());
     app.add_plugins(RenetServerPlugin);
     app.init_resource::<Clients>();
     app.init_resource::<InputBuffer>();
@@ -77,18 +86,25 @@ fn sync_game(
     time: Res<Time>,
     mut server: ResMut<RenetServer>,
     mut timer: ResMut<GameSyncTimer>,
-    player_q: Query<(&Player, &Transform)>,
+    transform_q: Query<(&ServerObject, &Transform)>,
+    player_q: Query<(&ServerObject, &Player)>,
+    frame_count: Res<FrameCount>,
 ) {
     timer.0.tick(time.delta());
     if timer.0.finished() {
+        info!("Syncing game");
         server.broadcast_message(
             DefaultChannel::Unreliable,
             UMFromServer::GameSync(GameSync {
+                transforms: transform_q
+                    .iter()
+                    .map(|(server_obj, transform)| (*server_obj, *transform))
+                    .collect(),
                 players: player_q
                     .iter()
-                    .map(|(player, transform)| (player.id, transform.clone()))
+                    .map(|(server_obj, player)| (*server_obj, *player))
                     .collect(),
-                frame: 0,
+                frame: frame_count.0,
             }),
         );
     }
@@ -98,7 +114,8 @@ fn receive_message_system(
     mut commands: Commands,
     mut server: ResMut<RenetServer>,
     mut clients: ResMut<Clients>,
-    query: Query<(&Player, &Transform)>,
+    transform_q: Query<(&ServerObject, &Transform)>,
+    player_q: Query<(&ServerObject, &Player)>,
     mut input_buffer: ResMut<InputBuffer>,
     frame_count: Res<FrameCount>,
 ) {
@@ -111,6 +128,7 @@ fn receive_message_system(
 
             match client_message {
                 UMFromClient::PlayerInput(player_input) => {
+                    info!("Receiving input {:?}", player_input);
                     let Some(player_id) = clients.players.get(&client_id) else {
                         warn!("Client {} not logged in", client_id);
                         continue;
@@ -145,27 +163,42 @@ fn receive_message_system(
                 continue;
             }
             clients.players.insert(client_id, login.id);
-            commands.spawn(PlayerLogicBundle::new(login.id));
-            server.broadcast_message(
-                DefaultChannel::ReliableOrdered,
-                ROMFromServer::PlayerConnected(login.id),
-            );
+            let entity = PlayerLogicBundle::new(login.id, ServerObject::rand());
             server.send_message(
                 client_id,
-                DefaultChannel::Unreliable,
-                UMFromServer::GameSync(GameSync {
-                    players: query
+                DefaultChannel::ReliableOrdered,
+                ROMFromServer::GameSync(GameSync {
+                    transforms: transform_q
                         .iter()
-                        .map(|(player, transform)| (player.id, transform.clone()))
+                        .chain(std::iter::once((
+                            &entity.server_object,
+                            &entity.transform_bundle.local,
+                        )))
+                        .map(|(server_obj, transform)| (*server_obj, *transform))
+                        .collect(),
+                    players: player_q
+                        .iter()
+                        .chain(std::iter::once((&entity.server_object, &entity.player)))
+                        .map(|(server_obj, player)| (*server_obj, *player))
                         .collect(),
                     frame: frame_count.0,
                 }),
             );
+            server.broadcast_message(
+                DefaultChannel::ReliableOrdered,
+                ROMFromServer::PlayerConnected {
+                    player_id: login.id,
+                    server_object: entity.server_object,
+                },
+            );
+            commands.spawn(entity);
         }
     }
 }
 
 fn handle_events_system(
+    mut commands: Commands,
+    player_q: Query<(Entity, &Player)>,
     mut server_events: EventReader<ServerEvent>,
     mut server: ResMut<RenetServer>,
     mut clients: ResMut<Clients>,
@@ -180,6 +213,11 @@ fn handle_events_system(
                 let Some(player_id) = clients.players.remove(client_id) else {
                     continue;
                 };
+                for (entity, player) in player_q.iter() {
+                    if player.id == player_id {
+                        commands.entity(entity).despawn_recursive();
+                    }
+                }
                 server.broadcast_message(
                     DefaultChannel::ReliableOrdered,
                     ROMFromServer::PlayerDisconnected(player_id),
@@ -194,10 +232,10 @@ fn process_inputs(
     mut players: Query<(&Player, &mut Transform)>,
     time: Res<Time>,
 ) {
-    let mut players = players
+    let players = players
         .iter_mut()
         .map(|(pos, transform)| (pos, transform.into_inner()))
         .collect::<Vec<_>>();
-    common::process_input(&input_buffer, &mut players, time.delta_seconds());
+    common::process_input(&input_buffer, players.into_iter(), time.delta_seconds());
     input_buffer.0.clear();
 }

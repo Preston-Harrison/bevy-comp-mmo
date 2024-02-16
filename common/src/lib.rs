@@ -3,6 +3,12 @@ use bevy_renet::renet::Bytes;
 use serde::{Deserialize, Serialize};
 
 pub mod bundles;
+pub mod rollback;
+
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 60.0;
+pub fn fixed_timestep_rate() -> Time<Fixed> {
+    Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
+}
 
 macro_rules! impl_bytes {
     ($t:ty) => {
@@ -26,7 +32,7 @@ macro_rules! impl_bytes {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PlayerId(pub u64);
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Player {
     pub id: PlayerId,
     pub speed: f32,
@@ -36,7 +42,7 @@ impl Default for Player {
     fn default() -> Self {
         Self {
             id: PlayerId(0),
-            speed: 100.0,
+            speed: 10.0,
         }
     }
 }
@@ -53,7 +59,10 @@ pub struct IdPlayerInput(pub PlayerId, pub PlayerInput);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Reliable Ordered Message from Server
 pub enum ROMFromServer {
-    PlayerConnected(PlayerId),
+    PlayerConnected {
+        player_id: PlayerId,
+        server_object: ServerObject,
+    },
     PlayerDisconnected(PlayerId),
     GameSync(GameSync),
 }
@@ -71,7 +80,7 @@ pub struct PlayerLogin {
     pub id: PlayerId,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Clone, Default)]
 pub struct InputBuffer(pub HashMap<PlayerId, PlayerInput>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +94,8 @@ impl_bytes!(UMFromServer);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSync {
     pub frame: u64,
-    pub players: HashMap<PlayerId, Transform>,
+    pub transforms: HashMap<ServerObject, Transform>,
+    pub players: HashMap<ServerObject, Player>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,15 +108,30 @@ impl_bytes!(UMFromClient);
 #[derive(Resource, Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct FrameCount(pub u64);
 
-pub fn process_input(
-    input_buffer: &InputBuffer,
-    players: &mut [(&Player, &mut Transform)],
-    delta_time: f32,
-) {
-    for (player, transform) in players.iter_mut() {
+#[derive(Default, Component, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, Hash)]
+pub struct ServerObject(u64);
+
+impl ServerObject {
+    pub fn rand() -> Self {
+        Self(rand::random())
+    }
+}
+
+#[derive(Default, Resource)]
+pub struct ServerEntityMap(pub HashMap<ServerObject, Entity>);
+
+pub fn process_input<'a, I>(input_buffer: &InputBuffer, players: I, delta_time: f32)
+where
+    I: IntoIterator<Item = (&'a Player, &'a mut Transform)>,
+{
+    for (player, transform) in players {
         if let Some(input) = input_buffer.0.get(&player.id) {
             transform.translation.x += input.x as f32 * player.speed * delta_time;
             transform.translation.y += input.y as f32 * player.speed * delta_time;
+            info!(
+                "Player {} moved to {:?}",
+                player.id.0, transform.translation
+            );
         }
     }
 }

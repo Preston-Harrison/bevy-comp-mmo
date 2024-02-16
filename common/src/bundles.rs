@@ -1,21 +1,23 @@
 use bevy::prelude::*;
 
-use crate::{Player, PlayerId};
+use crate::{Player, PlayerId, ServerObject};
 
 /// Probs will have collider & stuff later.
-#[derive(Bundle, Default)]
+#[derive(Bundle)]
 pub struct PlayerLogicBundle {
     pub player: Player,
+    pub server_object: ServerObject,
     pub transform_bundle: TransformBundle,
 }
 
 impl PlayerLogicBundle {
-    pub fn new(player_id: PlayerId) -> Self {
+    pub fn new(player_id: PlayerId, server_object: ServerObject) -> Self {
         Self {
             player: Player {
                 id: player_id,
                 ..Default::default()
             },
+            server_object,
             transform_bundle: TransformBundle::default(),
         }
     }

@@ -8,12 +8,14 @@ use bevy_renet::{
     RenetClientPlugin,
 };
 use clap::Parser;
-use common::{InputBuffer, PlayerId};
+use common::{InputBuffer, PlayerId, ServerEntityMap};
 use events::handle_login;
+use messages::ServerMessageBuffer;
 use std::{net::UdpSocket, time::SystemTime};
 
 mod events;
 mod input;
+mod messages;
 mod rollback;
 mod spawn;
 
@@ -40,6 +42,7 @@ fn main() {
         .add_systems(
             FixedUpdate,
             (
+                messages::receive_messages,
                 events::handle_game_events,
                 input::read_inputs,
                 input::broadcast_local_input,
@@ -49,6 +52,9 @@ fn main() {
                 .run_if(in_state(AppState::InGame)),
         )
         .init_resource::<InputBuffer>()
+        .init_resource::<ServerMessageBuffer>()
+        .init_resource::<ServerEntityMap>()
+        .insert_resource(common::fixed_timestep_rate())
         .insert_resource(LocalPlayer {
             id: PlayerId(args.id),
         });
