@@ -33,6 +33,12 @@ macro_rules! impl_bytes {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PlayerId(pub u64);
 
+impl Into<PlayerId> for u64 {
+    fn into(self) -> PlayerId {
+        PlayerId(self)
+    }
+}
+
 #[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Player {
     pub id: PlayerId,
@@ -45,6 +51,16 @@ impl Default for Player {
             id: PlayerId(0),
             speed: 10.0,
         }
+    }
+}
+
+impl Player {
+    pub fn new(id: PlayerId) -> Self {
+        Self { id, ..Default::default() }
+    }
+
+    pub fn with_speed(self, speed: f32) -> Self {
+        Self { speed, ..self }
     }
 }
 
@@ -96,7 +112,7 @@ pub struct PlayerLogin {
     pub id: PlayerId,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct InputBuffer(pub HashMap<PlayerId, RawPlayerInput>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

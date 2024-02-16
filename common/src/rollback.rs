@@ -141,6 +141,7 @@ pub fn resimulate_last_n_frames(
 
     for frame in 0..last_n_frames {
         let Some(input_for_frame) = input_rollback.history.get(frame as usize) else {
+            println!("No input for frame {}", frame);
             break;
         };
 
@@ -157,11 +158,17 @@ pub fn resimulate_last_n_frames(
             .iter_mut()
             .map(|(_entity, (player, transform))| (*player, transform));
 
+        println!("Processing input for frame {}", frame);
+        dbg!(input_for_frame);
+        dbg!(&resimulated_transforms);
+
         super::process_input(
             input_for_frame,
             mutable_transforms,
             super::FRAME_DURATION_SECONDS as f32,
         );
+
+        dbg!(&resimulated_transforms);
 
         for (entity, (_player, transform)) in player_transforms.iter() {
             resimulated_transforms.insert(**entity, *transform);
@@ -181,8 +188,6 @@ pub fn next_input_frame(mut input_rollback: ResMut<InputRollback>, frame: Res<Fr
 
 pub struct RollbackPlugin;
 
-pub const ROLLBACK_SYSTEM: &str = "rollback_system";
-
 impl Plugin for RollbackPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, next_input_frame.in_set(GameSchedule::Init))
@@ -193,5 +198,89 @@ impl Plugin for RollbackPlugin {
             .init_resource::<InputRollback>()
             .init_resource::<RollbackRequest>()
             .init_resource::<TransformRollback>();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::FRAME_DURATION_SECONDS;
+
+    use super::*;
+
+    fn new_entity(id: u64) -> Entity {
+        Entity::from_bits(id | 0 >> 32)
+    }
+
+    fn gen_transforms() -> Vec<(Entity, Transform)> {
+        vec![
+            (new_entity(0), Transform::default()),
+            (new_entity(1), Transform::default()),
+            (new_entity(2), Transform::default()),
+        ]
+    }
+
+    fn gen_players() -> Vec<(Entity, Player)> {
+        let speed = 1.0;
+        vec![
+            (new_entity(0), Player::new(0.into()).with_speed(speed)),
+            (new_entity(1), Player::new(1.into()).with_speed(speed)),
+            (new_entity(2), Player::new(2.into()).with_speed(speed)),
+        ]
+    }
+
+    fn sliceify_mut<T>(vec: &mut Vec<(Entity, T)>) -> Vec<(Entity, &mut T)> {
+        vec.iter_mut().map(|(e, t)| (*e, t)).collect::<Vec<_>>()
+    }
+
+    fn sliceify<T>(vec: &Vec<(Entity, T)>) -> Vec<(Entity, &T)> {
+        vec.iter().map(|(e, t)| (*e, t)).collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn test_resimulate_last_n_frames_simple() {
+        // Create test data
+        let last_n_frames = 3;
+
+        let mut current_transforms = gen_transforms();
+        let current_players = gen_players();
+
+        let mut transform_rollback = TransformRollback::default();
+        let mut input_rollback = InputRollback::default();
+
+        for (entity, transform) in current_transforms.iter() {
+            transform_rollback.history.insert(
+                *entity,
+                VecDeque::from(vec![*transform, *transform, *transform]),
+            );
+        }
+
+        let mut input_buffer = InputBuffer::default();
+        input_buffer
+            .0
+            .insert(0.into(), crate::RawPlayerInput { x: 1, y: 0 });
+        input_rollback.history.push_front(input_buffer);
+
+        let mut input_buffer = InputBuffer::default();
+        input_buffer
+            .0
+            .insert(0.into(), crate::RawPlayerInput { x: 0, y: -1 });
+        input_rollback.history.push_front(input_buffer);
+
+        // Call the function
+        resimulate_last_n_frames(
+            last_n_frames,
+            sliceify_mut(&mut current_transforms).as_mut_slice(),
+            sliceify(&current_players).as_slice(),
+            &mut transform_rollback,
+            &input_rollback,
+        );
+
+        // Assert the results
+        assert_eq!(
+            current_transforms[0].1,
+            Transform::from_translation(Vec3::new(FRAME_DURATION_SECONDS as f32, -FRAME_DURATION_SECONDS as f32, 0.0))
+        );
+        assert_eq!(current_transforms[1].1, Transform::default());
+        assert_eq!(current_transforms[2].1, Transform::default());
     }
 }
