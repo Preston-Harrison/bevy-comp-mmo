@@ -13,7 +13,7 @@ use common::{
     schedule::{GameSchedule, GameSchedulePlugin},
     PlayerId, ServerEntityMap,
 };
-use events::handle_login;
+use events::{handle_login, send_login};
 use messages::ServerMessageBuffer;
 use std::{net::UdpSocket, time::SystemTime};
 
@@ -42,14 +42,21 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .add_state::<AppState>()
-        .add_systems(Startup, handle_login.run_if(in_state(AppState::MainMenu)))
         .add_plugins(GameSchedulePlugin)
         .add_plugins(RollbackPlugin)
+        .add_systems(Startup, send_login)
+        .add_systems(
+            FixedUpdate,
+            messages::receive_messages.in_set(GameSchedule::Init),
+        )
+        .add_systems(
+            FixedUpdate,
+            handle_login.run_if(in_state(AppState::MainMenu)),
+        )
         .add_systems(
             FixedUpdate,
             (
                 common::rollback::next_input_frame,
-                messages::receive_messages,
                 events::handle_game_events,
                 input::read_inputs,
                 input::broadcast_local_input,

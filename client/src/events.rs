@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    bundles::PlayerLogicBundle, Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap,
-    ServerObject, UMFromServer,
+    bundles::PlayerLogicBundle, rollback::{SyncFrameCount, RollbackRequest}, Player, PlayerLogin,
+    ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer,
 };
 
 use crate::{
@@ -10,20 +10,43 @@ use crate::{
     AppState, LocalPlayer,
 };
 
-pub fn handle_login(
-    mut commands: Commands,
-    mut client: ResMut<RenetClient>,
-    local_player: Res<LocalPlayer>,
-    mut next_state: ResMut<NextState<AppState>>,
-) {
+pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer>) {
     client.send_message(
         DefaultChannel::ReliableOrdered,
         ROMFromClient::PlayerLogin(PlayerLogin {
             id: local_player.id,
         }),
     );
-    next_state.set(AppState::InGame);
-    commands.spawn(Camera2dBundle::default());
+}
+
+pub fn handle_login(
+    mut commands: Commands,
+    local_player: Res<LocalPlayer>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut server_entity_map: ResMut<ServerEntityMap>,
+    server_messages: Res<ServerMessageBuffer>,
+    mut rollback_request: ResMut<RollbackRequest>,
+    mut frame: ResMut<SyncFrameCount>,
+) {
+    for message in server_messages.reliable_ordered.iter() {
+        match message {
+            ROMFromServer::GameSync(game_sync) => {
+                info!("Initial game sync");
+                apply_game_sync(
+                    &mut commands,
+                    game_sync,
+                    &mut server_entity_map,
+                    local_player.id,
+                );
+                commands.spawn(Camera2dBundle::default());
+                rollback_request.request(game_sync.frame);
+                frame.0 = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) - 1; // TODO remove -1
+                info!("Starting game from frame: {}", frame.0);
+                next_state.set(AppState::InGame);
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn handle_game_events(
@@ -32,6 +55,7 @@ pub fn handle_game_events(
     local_player: Res<LocalPlayer>,
     mut server_entity_map: ResMut<ServerEntityMap>,
     player_q: Query<(Entity, &Player, &ServerObject)>,
+    mut rollback_request: ResMut<RollbackRequest>,
 ) {
     for message in server_messages.reliable_ordered.iter() {
         match message {
@@ -57,14 +81,7 @@ pub fn handle_game_events(
                     }
                 }
             }
-            ROMFromServer::GameSync(game_sync) => {
-                apply_game_sync(
-                    &mut commands,
-                    game_sync,
-                    &mut server_entity_map,
-                    local_player.id,
-                );
-            }
+            ROMFromServer::GameSync(_) => {}
         }
     }
 
@@ -77,6 +94,8 @@ pub fn handle_game_events(
                     &mut server_entity_map,
                     local_player.id,
                 );
+                rollback_request.request(game_sync.frame);
+                info!("Receving sync for frame {}", game_sync.frame);
             }
             _ => {}
         }

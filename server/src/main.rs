@@ -9,10 +9,10 @@ use bevy_renet::{
 };
 use common::{
     bundles::PlayerLogicBundle,
-    rollback::{InputRollback, RollbackPlugin},
+    rollback::{InputRollback, RollbackPlugin, RollbackRequest, SyncFrameCount},
     schedule::{GameSchedule, GameSchedulePlugin},
-    FrameCount, GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer,
-    ServerObject, UMFromClient, UMFromServer,
+    GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer, ServerObject,
+    UMFromClient, UMFromServer,
 };
 use std::{
     net::UdpSocket,
@@ -44,7 +44,6 @@ fn main() {
     app.add_plugins(LogPlugin::default());
     app.add_plugins(RenetServerPlugin);
     app.init_resource::<Clients>();
-    app.init_resource::<FrameCount>();
     app.init_resource::<GameSyncTimer>();
 
     app.add_plugins(GameSchedulePlugin);
@@ -73,7 +72,6 @@ fn main() {
         FixedUpdate,
         (
             sync_game,
-            update_frame_count,
             receive_message_system,
             process_inputs,
             handle_events_system,
@@ -84,34 +82,33 @@ fn main() {
     app.run();
 }
 
-fn update_frame_count(mut frame_count: ResMut<FrameCount>) {
-    frame_count.0 += 1;
-}
-
 fn sync_game(
     time: Res<Time>,
     mut server: ResMut<RenetServer>,
     mut timer: ResMut<GameSyncTimer>,
     transform_q: Query<(&ServerObject, &Transform)>,
     player_q: Query<(&ServerObject, &Player)>,
-    frame_count: Res<FrameCount>,
+    frame_count: Res<SyncFrameCount>,
 ) {
     timer.0.tick(time.delta());
     if timer.0.finished() {
-        info!("Syncing game");
+        info!("Syncing game on frame {}", frame_count.0);
+        let game_sync = GameSync {
+            transforms: transform_q
+                .iter()
+                .map(|(server_obj, transform)| (*server_obj, *transform))
+                .collect(),
+            players: player_q
+                .iter()
+                .map(|(server_obj, player)| (*server_obj, *player))
+                .collect(),
+            frame: frame_count.0,
+            unix_time: common::get_unix_time(),
+        };
+        info!("{:?}", game_sync);
         server.broadcast_message(
             DefaultChannel::Unreliable,
-            UMFromServer::GameSync(GameSync {
-                transforms: transform_q
-                    .iter()
-                    .map(|(server_obj, transform)| (*server_obj, *transform))
-                    .collect(),
-                players: player_q
-                    .iter()
-                    .map(|(server_obj, player)| (*server_obj, *player))
-                    .collect(),
-                frame: frame_count.0,
-            }),
+            UMFromServer::GameSync(game_sync),
         );
     }
 }
@@ -123,7 +120,8 @@ fn receive_message_system(
     transform_q: Query<(&ServerObject, &Transform)>,
     player_q: Query<(&ServerObject, &Player)>,
     mut input_rollback: ResMut<InputRollback>,
-    frame_count: Res<FrameCount>,
+    frame_count: Res<SyncFrameCount>,
+    mut rollback_request: ResMut<RollbackRequest>,
 ) {
     for client_id in server.clients_id() {
         while let Some(message) = server.receive_message(client_id, DefaultChannel::Unreliable) {
@@ -134,7 +132,6 @@ fn receive_message_system(
 
             match client_message {
                 UMFromClient::PlayerInput(framed_input) => {
-                    info!("Receiving input {:?}", framed_input);
                     let Some(player_id) = clients.players.get(&client_id) else {
                         warn!("Client {} not logged in", client_id);
                         continue;
@@ -144,6 +141,8 @@ fn receive_message_system(
                         input: framed_input,
                     };
                     input_rollback.accept_input(id_input);
+                    info!("Accepting input for frame {} on frame {}", framed_input.frame, frame_count.0);
+                    rollback_request.request(framed_input.frame);
                     server.broadcast_message_except(
                         client_id,
                         DefaultChannel::Unreliable,
@@ -191,6 +190,7 @@ fn receive_message_system(
                         .map(|(server_obj, player)| (*server_obj, *player))
                         .collect(),
                     frame: frame_count.0,
+                    unix_time: common::get_unix_time(),
                 }),
             );
             server.broadcast_message(
@@ -239,12 +239,17 @@ fn handle_events_system(
 fn process_inputs(
     input_rollback: Res<InputRollback>,
     mut players: Query<(&Player, &mut Transform)>,
+    frame_count: Res<SyncFrameCount>,
     time: Res<Time>,
 ) {
     let players = players
         .iter_mut()
         .map(|(pos, transform)| (pos, transform.into_inner()))
         .collect::<Vec<_>>();
+
+    if !input_rollback.get_latest().0.is_empty() {
+        info!("Processing inputs on frame {}", frame_count.0);
+    }
 
     common::process_input(
         input_rollback.get_latest(),

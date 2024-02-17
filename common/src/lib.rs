@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use bevy::{prelude::*, utils::HashMap};
 use bevy_renet::renet::Bytes;
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,7 @@ pub mod bundles;
 pub mod rollback;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 60.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 5.0;
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
 }
@@ -30,14 +32,26 @@ macro_rules! impl_bytes {
     };
 }
 
+#[macro_export]
+macro_rules! impl_inner {
+    ($outer:path, $inner:path) => {
+        impl Into<$inner> for $outer {
+            fn into(self) -> $inner {
+                self.0
+            }
+        }
+
+        impl Into<$outer> for $inner {
+            fn into(self) -> $outer {
+                $outer(self)
+            }
+        }
+    };
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PlayerId(pub u64);
-
-impl Into<PlayerId> for u64 {
-    fn into(self) -> PlayerId {
-        PlayerId(self)
-    }
-}
+impl_inner!(PlayerId, u64);
 
 #[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Player {
@@ -49,7 +63,7 @@ impl Default for Player {
     fn default() -> Self {
         Self {
             id: PlayerId(0),
-            speed: 10.0,
+            speed: 100.0,
         }
     }
 }
@@ -126,6 +140,8 @@ impl_bytes!(UMFromServer);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSync {
     pub frame: u64,
+    /// Unix time this sync was generated in seconds.
+    pub unix_time: f64,
     pub transforms: HashMap<ServerObject, Transform>,
     pub players: HashMap<ServerObject, Player>,
 }
@@ -136,9 +152,6 @@ pub enum UMFromClient {
     PlayerInput(FramedPlayerInput),
 }
 impl_bytes!(UMFromClient);
-
-#[derive(Resource, Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct FrameCount(pub u64);
 
 #[derive(Default, Component, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, Hash)]
 pub struct ServerObject(u64);
@@ -160,10 +173,23 @@ where
         if let Some(input) = input_buffer.0.get(&player.id) {
             transform.translation.x += input.x as f32 * player.speed * delta_time;
             transform.translation.y += input.y as f32 * player.speed * delta_time;
-            info!(
-                "Player {} moved to {:?}",
-                player.id.0, transform.translation
-            );
         }
     }
+
+}
+
+pub fn get_unix_time() -> f64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+}
+
+pub fn frames_since_unix_time(unix_time: f64) -> u64 {
+    let current_time = get_unix_time();
+    ((current_time - unix_time) / FRAME_DURATION_SECONDS) as u64
+}
+
+pub fn is_server() -> bool {
+    std::env::var("SERVER").is_ok()
 }
