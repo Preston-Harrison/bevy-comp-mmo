@@ -32,7 +32,7 @@ struct GameSyncTimer(Timer);
 
 impl Default for GameSyncTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(1.0, TimerMode::Repeating))
+        Self(Timer::from_seconds(5.0, TimerMode::Repeating))
     }
 }
 

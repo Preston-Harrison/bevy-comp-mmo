@@ -21,7 +21,7 @@ use std::{net::UdpSocket, time::SystemTime};
 mod events;
 mod input;
 mod messages;
-mod rollback;
+mod game_sync;
 mod spawn;
 mod ui;
 
@@ -59,7 +59,7 @@ fn main() {
         .add_systems(
             FixedUpdate,
             (
-                common::rollback::next_input_frame,
+                common::rollback::init_rollback_for_frame,
                 events::handle_game_events,
                 input::read_inputs,
                 input::broadcast_local_input,

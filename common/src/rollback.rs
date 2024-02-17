@@ -20,6 +20,7 @@ pub const ROLLBACK_WINDOW: usize = 10;
 pub struct TransformRollback {
     // First element of the deque is the most recent transform.
     history: VecDeque<HashMap<Entity, Transform>>,
+    current_frame: u64,
 }
 
 impl TransformRollback {
@@ -39,6 +40,21 @@ impl TransformRollback {
         for _ in 0..frame {
             self.history.pop_front();
         }
+    }
+
+    pub fn set_transform_at_frame(&mut self, entity: Entity, transform: Transform, frame: u64) {
+        if frame > self.current_frame {
+            // This triggers once at the start of the game for some reason.
+            // TODO look at this.
+            warn!(
+                "Cannot set transform at frame {} because current frame is {}",
+                frame, self.current_frame
+            );
+            return;
+        }
+        self.history
+            .get_mut((self.current_frame - frame) as usize)
+            .and_then(|map| map.insert(entity, transform));
     }
 }
 
@@ -65,21 +81,16 @@ impl InputRollback {
         entry.0.insert(id_input.player_id, id_input.input.raw);
     }
 
-    pub fn next_frame(&mut self, current_frame: u64) {
+    fn next_frame(&mut self, current_frame: u64) {
         push_front_with_cap(&mut self.history, InputBuffer::default(), ROLLBACK_WINDOW);
         self.current_frame = current_frame;
-    }
-
-    pub fn get_at_frame(&self, frame: u64) -> &InputBuffer {
-        let ix = self.current_frame - frame;
-        self.history.get(ix as usize).unwrap()
     }
 
     pub fn get_latest(&self) -> &InputBuffer {
         self.history.front().unwrap()
     }
 
-    pub fn get_n_frames_ago(&self, n_frames: u64) -> Option<&InputBuffer> {
+    fn get_n_frames_ago(&self, n_frames: u64) -> Option<&InputBuffer> {
         self.history.get(n_frames as usize)
     }
 }
@@ -87,12 +98,14 @@ impl InputRollback {
 pub fn track_rollbacks_components(
     transform_q: Query<(Entity, &Transform), With<ServerObject>>,
     mut transform_rollback: ResMut<TransformRollback>,
+    frame: Res<SyncFrameCount>,
 ) {
     let mut next_frame = HashMap::default();
     for (entity, transform) in transform_q.iter() {
         next_frame.insert(entity, *transform);
     }
     push_front_with_cap(&mut transform_rollback.history, next_frame, ROLLBACK_WINDOW);
+    transform_rollback.current_frame = frame.0;
 }
 
 fn push_front_with_cap<T>(vec: &mut VecDeque<T>, item: T, cap: usize) {
@@ -229,13 +242,24 @@ pub fn resimulate_last_n_frames(
 
     for (entity, transform) in current_transforms.iter_mut() {
         if let Some(new_transform) = new_transforms.get(entity) {
+            if new_transform != *transform {
+                info!(
+                    "After rollback, transform went from {:?} to {:?}",
+                    transform.translation, new_transform.translation
+                );
+            }
             **transform = *new_transform;
         }
     }
 }
 
-pub fn next_input_frame(mut input_rollback: ResMut<InputRollback>, frame: Res<SyncFrameCount>) {
+pub fn init_rollback_for_frame(
+    mut transform_rollback: ResMut<TransformRollback>,
+    mut input_rollback: ResMut<InputRollback>,
+    frame: Res<SyncFrameCount>,
+) {
     input_rollback.next_frame(frame.0);
+    transform_rollback.current_frame = frame.0;
 }
 
 pub struct RollbackPlugin;
@@ -244,7 +268,7 @@ impl Plugin for RollbackPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             FixedUpdate,
-            (increment_sync_frame_count, next_input_frame)
+            (increment_sync_frame_count, init_rollback_for_frame)
                 .chain()
                 .in_set(GameSchedule::Init),
         )

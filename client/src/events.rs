@@ -2,12 +2,12 @@ use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
     bundles::PlayerLogicBundle,
-    rollback::{RollbackRequest, SyncFrameCount},
+    rollback::{RollbackRequest, SyncFrameCount, TransformRollback},
     Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer,
 };
 
 use crate::{
-    messages::ServerMessageBuffer, rollback::apply_game_sync, spawn::get_player_sprite_bundle,
+    messages::ServerMessageBuffer, game_sync::apply_game_sync, spawn::get_player_sprite_bundle,
     AppState, LocalPlayer,
 };
 
@@ -28,21 +28,26 @@ pub fn handle_login(
     server_messages: Res<ServerMessageBuffer>,
     mut rollback_request: ResMut<RollbackRequest>,
     mut frame: ResMut<SyncFrameCount>,
+    mut transform_rollback: ResMut<TransformRollback>,
 ) {
     for message in server_messages.reliable_ordered.iter() {
         match message {
             ROMFromServer::GameSync(game_sync) => {
                 info!("Initial game sync");
+                let init_frame = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
+                frame.0 = init_frame;
+                info!("Starting game from frame: {}", init_frame);
+
                 apply_game_sync(
                     &mut commands,
+                    &mut transform_rollback,
                     game_sync,
                     &mut server_entity_map,
                     local_player.id,
+                    &mut rollback_request
                 );
+
                 commands.spawn(Camera2dBundle::default());
-                rollback_request.request(game_sync.frame);
-                frame.0 = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
-                info!("Starting game from frame: {}", frame.0);
                 next_state.set(AppState::InGame);
             }
             _ => {}
@@ -57,6 +62,7 @@ pub fn handle_game_events(
     mut server_entity_map: ResMut<ServerEntityMap>,
     player_q: Query<(Entity, &Player, &ServerObject)>,
     mut rollback_request: ResMut<RollbackRequest>,
+    mut transform_rollback: ResMut<TransformRollback>
 ) {
     for message in server_messages.reliable_ordered.iter() {
         match message {
@@ -91,11 +97,12 @@ pub fn handle_game_events(
             UMFromServer::GameSync(game_sync) => {
                 apply_game_sync(
                     &mut commands,
+                    &mut transform_rollback,
                     game_sync,
                     &mut server_entity_map,
                     local_player.id,
+                    &mut rollback_request
                 );
-                rollback_request.request(game_sync.frame);
                 info!("Receving sync for frame {}", game_sync.frame);
             }
             _ => {}
