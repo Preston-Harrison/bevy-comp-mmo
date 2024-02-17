@@ -14,6 +14,9 @@ pub fn receive_messages(mut client: ResMut<RenetClient>, mut buffer: ResMut<Serv
 
     while let Some(message) = client.receive_message(DefaultChannel::Unreliable) {
         if let Ok(um) = UMFromServer::try_from(message) {
+            if matches!(um, UMFromServer::IdPlayerInput(_)) {
+                info!("INPUT_RECEIVED");
+            };
             buffer.unreliable.push(um);
         }
     }

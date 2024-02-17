@@ -15,6 +15,7 @@ use common::{
 };
 use events::{handle_login, send_login};
 use messages::ServerMessageBuffer;
+use ui::UIPlugin;
 use std::{net::UdpSocket, time::SystemTime};
 
 mod events;
@@ -22,6 +23,7 @@ mod input;
 mod messages;
 mod rollback;
 mod spawn;
+mod ui;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -44,6 +46,7 @@ fn main() {
         .add_state::<AppState>()
         .add_plugins(GameSchedulePlugin)
         .add_plugins(RollbackPlugin)
+        .add_plugins(UIPlugin)
         .add_systems(Startup, send_login)
         .add_systems(
             FixedUpdate,

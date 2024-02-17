@@ -188,9 +188,7 @@ pub fn resimulate_last_n_frames(
     }
 
     for frame in (0..=last_n_frames).rev() {
-        println!("Frame {}", frame);
         let Some(input_for_frame) = input_rollback.get_n_frames_ago(frame) else {
-            println!("No input for frame {}", frame);
             warn!("No input for frame {}", frame);
             continue;
         };
@@ -330,8 +328,6 @@ mod test {
         input_rollback.history.push_front(InputBuffer::default());
         input_rollback.history.push_front(InputBuffer::default());
         input_rollback.current_frame = 4;
-
-        println!("{:#?}", transform_rollback);
 
         // Call the function
         resimulate_last_n_frames(

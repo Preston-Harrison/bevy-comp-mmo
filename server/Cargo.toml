@@ -9,3 +9,6 @@ bincode = { workspace = true }
 bevy = { workspace = true }
 bevy_renet = { workspace = true }
 serde = { workspace = true }
+
+[features]
+"debug" = []

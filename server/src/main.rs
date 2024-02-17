@@ -19,6 +19,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+#[cfg(feature = "debug")]
+mod ui;
+
 #[derive(Resource, Default)]
 struct Clients {
     players: HashMap<ClientId, PlayerId>,
@@ -35,16 +38,27 @@ impl Default for GameSyncTimer {
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(
-        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f32(
-            1.0 / 60.0,
-        ))),
-    );
+
+    #[cfg(not(feature = "debug"))]
+    {
+        app.add_plugins(LogPlugin::default());
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+            Duration::from_secs_f32(common::FRAME_DURATION_SECONDS as f32),
+        )));
+    }
+
+    #[cfg(feature = "debug")]
+    {
+        app.add_plugins(DefaultPlugins);
+    }
+
     app.insert_resource(common::fixed_timestep_rate());
-    app.add_plugins(LogPlugin::default());
     app.add_plugins(RenetServerPlugin);
     app.init_resource::<Clients>();
     app.init_resource::<GameSyncTimer>();
+
+    #[cfg(feature = "debug")]
+    app.add_plugins(ui::UIPlugin);
 
     app.add_plugins(GameSchedulePlugin);
     app.add_plugins(RollbackPlugin);
@@ -122,6 +136,7 @@ fn receive_message_system(
     mut input_rollback: ResMut<InputRollback>,
     frame_count: Res<SyncFrameCount>,
     mut rollback_request: ResMut<RollbackRequest>,
+    #[cfg(feature = "debug")] mut input_tracker: ResMut<self::ui::InputTracker>,
 ) {
     for client_id in server.clients_id() {
         while let Some(message) = server.receive_message(client_id, DefaultChannel::Unreliable) {
@@ -144,6 +159,14 @@ fn receive_message_system(
                         );
                         continue;
                     }
+
+                    #[cfg(feature = "debug")]
+                    input_tracker
+                        .inputs
+                        .entry(*player_id)
+                        .and_modify(|e| *e += 1)
+                        .or_default();
+
                     let id_input = IdPlayerInput {
                         player_id: *player_id,
                         input: framed_input,
