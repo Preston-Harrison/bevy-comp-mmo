@@ -2,7 +2,9 @@ use bevy::{prelude::*, utils::HashMap};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-use crate::{impl_inner, is_server, schedule::GameSchedule, IdPlayerInput, InputBuffer, Player, ServerObject};
+use crate::{
+    impl_inner, is_server, schedule::GameSchedule, IdPlayerInput, InputBuffer, Player, ServerObject,
+};
 
 #[derive(Resource, Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct SyncFrameCount(pub u64);
@@ -14,35 +16,28 @@ pub fn increment_sync_frame_count(mut frame_count: ResMut<SyncFrameCount>) {
 
 pub const ROLLBACK_WINDOW: usize = 10;
 
-#[derive(Resource, Default)]
+#[derive(Debug, Resource, Default)]
 pub struct TransformRollback {
     // First element of the deque is the most recent transform.
-    history: HashMap<Entity, VecDeque<Transform>>,
-
+    history: VecDeque<HashMap<Entity, Transform>>,
 }
 
 impl TransformRollback {
-    fn get_n_frames_ago(&self, n_frames: u64) -> HashMap<Entity, Transform> {
-        let mut result = HashMap::default();
-        for (entity, history) in self.history.iter() {
-            if let Some(item) = history.get(n_frames as usize) {
-                result.insert(*entity, *item);
-            }
-        }
-        result
+    fn add_frame(&mut self, frame: HashMap<Entity, Transform>) {
+        push_front_with_cap(&mut self.history, frame, ROLLBACK_WINDOW);
     }
 
-    fn get_latest(&self) -> HashMap<Entity, Transform> {
-        self.get_n_frames_ago(0)
+    fn get_n_frames_ago(&self, n_frames: u64) -> Option<&HashMap<Entity, Transform>> {
+        self.history.get(n_frames as usize)
+    }
+
+    fn get_latest(&self) -> &HashMap<Entity, Transform> {
+        self.get_n_frames_ago(0).unwrap()
     }
 
     fn rollback_frames(&mut self, frame: u64) {
-        for history in self.history.values_mut() {
-            for _ in 0..frame {
-                if history.len() > 1 {
-                    history.pop_front();
-                }
-            }
+        for _ in 0..frame {
+            self.history.pop_front();
         }
     }
 }
@@ -93,10 +88,11 @@ pub fn track_rollbacks_components(
     transform_q: Query<(Entity, &Transform), With<ServerObject>>,
     mut transform_rollback: ResMut<TransformRollback>,
 ) {
+    let mut next_frame = HashMap::default();
     for (entity, transform) in transform_q.iter() {
-        let history = transform_rollback.history.entry(entity).or_default();
-        push_front_with_cap(history, *transform, ROLLBACK_WINDOW);
+        next_frame.insert(entity, *transform);
     }
+    push_front_with_cap(&mut transform_rollback.history, next_frame, ROLLBACK_WINDOW);
 }
 
 fn push_front_with_cap<T>(vec: &mut VecDeque<T>, item: T, cap: usize) {
@@ -178,26 +174,23 @@ pub fn resimulate_last_n_frames(
     info!("Rolling back {} frames", last_n_frames);
     transform_rollback.rollback_frames(last_n_frames);
 
-    let mut resimulated_transforms = transform_rollback.get_latest();
-    
-    if is_server() {
-        info!(?resimulated_transforms);
-    }
-
     if is_server() {
         info!(?input_rollback);
     }
 
     for frame in (0..=last_n_frames).rev() {
+        println!("Frame {}", frame);
         let Some(input_for_frame) = input_rollback.get_n_frames_ago(frame) else {
+            println!("No input for frame {}", frame);
             warn!("No input for frame {}", frame);
-            break;
+            continue;
         };
 
         let mut player_transforms = current_players
             .iter()
             .filter_map(|(entity, player)| {
-                resimulated_transforms
+                transform_rollback
+                    .get_latest()
                     .get(entity)
                     .map(|transform| (entity, (*player, *transform)))
             })
@@ -217,17 +210,18 @@ pub fn resimulate_last_n_frames(
             super::FRAME_DURATION_SECONDS as f32,
         );
 
-        for (entity, (_player, transform)) in player_transforms.iter() {
-            resimulated_transforms.insert(**entity, *transform);
-        }
+        let next_frame = player_transforms
+            .iter()
+            .map(|(entity, (_player, transform))| (**entity, *transform))
+            .collect::<HashMap<_, _>>();
+
+        transform_rollback.add_frame(next_frame);
     }
 
-    if is_server() {
-        info!(?resimulated_transforms);
-    }
+    let new_transforms = transform_rollback.get_latest();
 
     for (entity, transform) in current_transforms.iter_mut() {
-        if let Some(new_transform) = resimulated_transforms.get(entity) {
+        if let Some(new_transform) = new_transforms.get(entity) {
             **transform = *new_transform;
         }
     }
@@ -303,10 +297,12 @@ mod test {
         let mut transform_rollback = TransformRollback::default();
         let mut input_rollback = InputRollback::default();
 
-        for (entity, transform) in current_transforms.iter() {
-            transform_rollback.history.insert(
-                *entity,
-                VecDeque::from(vec![*transform, *transform, *transform]),
+        for _ in 0..=last_n_frames {
+            transform_rollback.add_frame(
+                current_transforms
+                    .iter()
+                    .map(|(entity, transform)| (*entity, *transform))
+                    .collect(),
             );
         }
 
@@ -321,6 +317,12 @@ mod test {
             .0
             .insert(0.into(), crate::RawPlayerInput { x: 0, y: -1 });
         input_rollback.history.push_front(input_buffer);
+
+        input_rollback.history.push_front(InputBuffer::default());
+        input_rollback.history.push_front(InputBuffer::default());
+        input_rollback.current_frame = 4;
+
+        println!("{:#?}", transform_rollback);
 
         // Call the function
         resimulate_last_n_frames(

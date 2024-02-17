@@ -141,7 +141,10 @@ fn receive_message_system(
                         input: framed_input,
                     };
                     input_rollback.accept_input(id_input);
-                    info!("Accepting input for frame {} on frame {}", framed_input.frame, frame_count.0);
+                    info!(
+                        "Accepting input for frame {} on frame {}",
+                        framed_input.frame, frame_count.0
+                    );
                     rollback_request.request(framed_input.frame);
                     server.broadcast_message_except(
                         client_id,

@@ -70,7 +70,10 @@ impl Default for Player {
 
 impl Player {
     pub fn new(id: PlayerId) -> Self {
-        Self { id, ..Default::default() }
+        Self {
+            id,
+            ..Default::default()
+        }
     }
 
     pub fn with_speed(self, speed: f32) -> Self {
@@ -175,7 +178,6 @@ where
             transform.translation.y += input.y as f32 * player.speed * delta_time;
         }
     }
-
 }
 
 pub fn get_unix_time() -> f64 {

@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    rollback::{SyncFrameCount, InputRollback, RollbackRequest}, IdPlayerInput, Player, RawPlayerInput, UMFromClient,
-    UMFromServer,
+    rollback::{InputRollback, RollbackRequest, SyncFrameCount},
+    IdPlayerInput, Player, RawPlayerInput, UMFromClient, UMFromServer,
 };
 
 use crate::{messages::ServerMessageBuffer, LocalPlayer};
