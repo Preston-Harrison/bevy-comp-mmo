@@ -41,7 +41,7 @@ pub fn handle_login(
                 );
                 commands.spawn(Camera2dBundle::default());
                 rollback_request.request(game_sync.frame);
-                frame.0 = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) - 1; // TODO remove -1
+                frame.0 = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
                 info!("Starting game from frame: {}", frame.0);
                 next_state.set(AppState::InGame);
             }

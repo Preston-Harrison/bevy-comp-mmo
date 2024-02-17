@@ -149,6 +149,15 @@ pub fn rollback(
         return;
     }
 
+    if frames > ROLLBACK_WINDOW as u64 {
+        warn!(
+            "Rollback to {} frames ago is not possible, maximum rollback window is {}",
+            frames, ROLLBACK_WINDOW
+        );
+        request.0 = None;
+        return;
+    }
+
     resimulate_last_n_frames(
         frames,
         transform_q

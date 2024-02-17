@@ -29,7 +29,7 @@ struct GameSyncTimer(Timer);
 
 impl Default for GameSyncTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(10.0, TimerMode::Repeating))
+        Self(Timer::from_seconds(1.0, TimerMode::Repeating))
     }
 }
 
@@ -136,6 +136,14 @@ fn receive_message_system(
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
+                    if framed_input.frame < frame_count.0 - common::rollback::ROLLBACK_WINDOW as u64
+                    {
+                        warn!(
+                            "Ignoring old input from client {} for frame {} (current frame {})",
+                            client_id, framed_input.frame, frame_count.0
+                        );
+                        continue;
+                    }
                     let id_input = IdPlayerInput {
                         player_id: *player_id,
                         input: framed_input,
