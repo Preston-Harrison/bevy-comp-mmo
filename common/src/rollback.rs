@@ -18,12 +18,17 @@ pub const ROLLBACK_WINDOW: usize = 10;
 
 #[derive(Debug, Resource, Default)]
 pub struct TransformRollback {
-    // First element of the deque is the most recent transform.
+    // First element of the deque is the transform in the current frame. This is reset in `Rollback::Init`.
     history: VecDeque<HashMap<Entity, Transform>>,
     current_frame: u64,
 }
 
 impl TransformRollback {
+    fn next_frame(&mut self, current_frame: u64) {
+        push_front_with_cap(&mut self.history, HashMap::default(), ROLLBACK_WINDOW);
+        self.current_frame = current_frame;
+    }
+
     fn add_frame(&mut self, frame: HashMap<Entity, Transform>) {
         push_front_with_cap(&mut self.history, frame, ROLLBACK_WINDOW);
     }
@@ -98,14 +103,11 @@ impl InputRollback {
 pub fn track_rollbacks_components(
     transform_q: Query<(Entity, &Transform), With<ServerObject>>,
     mut transform_rollback: ResMut<TransformRollback>,
-    frame: Res<SyncFrameCount>,
 ) {
-    let mut next_frame = HashMap::default();
+    let next_frame = transform_rollback.history.front_mut().unwrap();
     for (entity, transform) in transform_q.iter() {
         next_frame.insert(entity, *transform);
     }
-    push_front_with_cap(&mut transform_rollback.history, next_frame, ROLLBACK_WINDOW);
-    transform_rollback.current_frame = frame.0;
 }
 
 fn push_front_with_cap<T>(vec: &mut VecDeque<T>, item: T, cap: usize) {
@@ -259,7 +261,7 @@ pub fn init_rollback_for_frame(
     frame: Res<SyncFrameCount>,
 ) {
     input_rollback.next_frame(frame.0);
-    transform_rollback.current_frame = frame.0;
+    transform_rollback.next_frame(frame.0);
 }
 
 pub struct RollbackPlugin;
