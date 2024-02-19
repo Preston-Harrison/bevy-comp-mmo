@@ -7,7 +7,7 @@ use common::{
 };
 
 use crate::{
-    messages::ServerMessageBuffer, game_sync::apply_game_sync, spawn::get_player_sprite_bundle,
+    game_sync::apply_game_sync, messages::ServerMessageBuffer, spawn::get_player_sprite_bundle,
     AppState, LocalPlayer,
 };
 
@@ -34,7 +34,8 @@ pub fn handle_login(
         match message {
             ROMFromServer::GameSync(game_sync) => {
                 info!("Initial game sync");
-                let init_frame = game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
+                let init_frame =
+                    game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
                 frame.0 = init_frame;
                 info!("Starting game from frame: {}", init_frame);
 
@@ -44,7 +45,7 @@ pub fn handle_login(
                     game_sync,
                     &mut server_entity_map,
                     local_player.id,
-                    &mut rollback_request
+                    &mut rollback_request,
                 );
 
                 commands.spawn(Camera2dBundle::default());
@@ -62,7 +63,7 @@ pub fn handle_game_events(
     mut server_entity_map: ResMut<ServerEntityMap>,
     player_q: Query<(Entity, &Player, &ServerObject)>,
     mut rollback_request: ResMut<RollbackRequest>,
-    mut transform_rollback: ResMut<TransformRollback>
+    mut transform_rollback: ResMut<TransformRollback>,
 ) {
     for message in server_messages.reliable_ordered.iter() {
         match message {
@@ -101,7 +102,7 @@ pub fn handle_game_events(
                     game_sync,
                     &mut server_entity_map,
                     local_player.id,
-                    &mut rollback_request
+                    &mut rollback_request,
                 );
                 info!("Receving sync for frame {}", game_sync.frame);
             }

@@ -15,13 +15,13 @@ use common::{
 };
 use events::{handle_login, send_login};
 use messages::ServerMessageBuffer;
-use ui::UIPlugin;
 use std::{net::UdpSocket, time::SystemTime};
+use ui::UIPlugin;
 
 mod events;
+mod game_sync;
 mod input;
 mod messages;
-mod game_sync;
 mod spawn;
 mod ui;
 

@@ -9,7 +9,7 @@ use bevy_renet::{
 };
 use common::{
     bundles::PlayerLogicBundle,
-    rollback::{InputRollback, RollbackPlugin, RollbackRequest, SyncFrameCount},
+    rollback::{InputRollback, RollbackPlugin, RollbackRequest, SyncFrameCount, ROLLBACK_WINDOW},
     schedule::{GameSchedule, GameSchedulePlugin},
     GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer, ServerObject,
     UMFromClient, UMFromServer,
@@ -151,7 +151,8 @@ fn receive_message_system(
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
-                    if framed_input.frame < frame_count.0 - common::rollback::ROLLBACK_WINDOW as u64
+                    if framed_input.frame < frame_count.0
+                        && frame_count.0 - framed_input.frame > ROLLBACK_WINDOW as u64
                     {
                         warn!(
                             "Ignoring old input from client {} for frame {} (current frame {})",

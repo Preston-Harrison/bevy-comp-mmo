@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use common::{rollback::InputRollback, Player, PlayerId, UMFromServer};
+use common::{
+    rollback::{InputRollback, SyncFrameCount},
+    Player, PlayerId, UMFromServer,
+};
 
 use crate::{messages::ServerMessageBuffer, LocalPlayer};
 
@@ -10,6 +13,9 @@ pub struct InputCounter {
     pub player_id: PlayerId,
     pub count: u64,
 }
+
+#[derive(Component)]
+pub struct SyncFrameCounter;
 
 pub fn spawn_input_counters(
     mut commands: Commands,
@@ -65,5 +71,14 @@ pub fn update_input_counters(
                 );
             }
         }
+    }
+}
+
+pub fn update_frame_counter(
+    frame: Res<SyncFrameCount>,
+    mut text_q: Query<(&mut Text, &mut SyncFrameCounter)>,
+) {
+    for (mut text, _) in text_q.iter_mut() {
+        text.sections[0].value = format!("Frame: {}", frame.0);
     }
 }

@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use common::{rollback::{RollbackRequest, TransformRollback}, GameSync, PlayerId, ServerEntityMap};
+use common::{
+    rollback::{RollbackRequest, TransformRollback},
+    GameSync, PlayerId, ServerEntityMap,
+};
 
 use crate::spawn::get_player_sprite_bundle;
 

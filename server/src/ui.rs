@@ -1,5 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
-use common::{schedule::GameSchedule, Player, PlayerId};
+use common::{rollback::SyncFrameCount, schedule::GameSchedule, Player, PlayerId};
 
 #[derive(Resource, Default)]
 pub struct InputTracker {
@@ -10,16 +10,29 @@ pub struct InputTracker {
 pub struct UIRoot;
 
 pub fn setup_ui(mut commands: Commands) {
-    commands.spawn(UIRoot).insert(NodeBundle {
-        style: Style {
-            width: Val::Percent(100.0),
-            justify_content: JustifyContent::SpaceBetween,
-            flex_direction: FlexDirection::Column,
+    commands
+        .spawn(UIRoot)
+        .insert(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                justify_content: JustifyContent::SpaceBetween,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
             ..default()
-        },
-        ..default()
-    });
-	commands.spawn(Camera2dBundle::default());
+        })
+        .with_children(|parent| {
+            parent
+                .spawn(SyncFrameCounter)
+                .insert(TextBundle::from_section(
+                    "Frame: -",
+                    TextStyle {
+                        font_size: 20.0,
+                        ..Default::default()
+                    },
+                ));
+        });
+    commands.spawn(Camera2dBundle::default());
 }
 
 pub struct UIPlugin;
@@ -30,7 +43,11 @@ impl Plugin for UIPlugin {
             .add_systems(Startup, setup_ui)
             .add_systems(
                 FixedUpdate,
-                (spawn_input_counters, update_input_counters)
+                (
+                    spawn_input_counters,
+                    update_input_counters,
+                    update_frame_counter,
+                )
                     .chain()
                     .after(GameSchedule::Main),
             );
@@ -38,11 +55,14 @@ impl Plugin for UIPlugin {
 }
 
 #[derive(Component)]
+pub struct SyncFrameCounter;
+
+#[derive(Component)]
 pub struct InputCounter {
     pub player_id: PlayerId,
 }
 
-pub fn spawn_input_counters(
+fn spawn_input_counters(
     mut commands: Commands,
     ui: Query<Entity, With<UIRoot>>,
     player_q: Query<&Player, Added<Player>>,
@@ -65,7 +85,7 @@ pub fn spawn_input_counters(
     }
 }
 
-pub fn update_input_counters(
+fn update_input_counters(
     input_tracker: Res<InputTracker>,
     mut text_q: Query<(&mut Text, &InputCounter)>,
 ) {
@@ -76,5 +96,14 @@ pub fn update_input_counters(
             .copied()
             .unwrap_or(0);
         text.sections[0].value = format!("Player {}: {}", input_counter.player_id.0, count);
+    }
+}
+
+fn update_frame_counter(
+    sync_frame_count: Res<SyncFrameCount>,
+    mut text_q: Query<(&mut Text, &SyncFrameCounter)>,
+) {
+    for (mut text, _) in text_q.iter_mut() {
+        text.sections[0].value = format!("Frame: {}", sync_frame_count.0);
     }
 }

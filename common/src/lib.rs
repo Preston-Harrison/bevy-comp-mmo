@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 pub mod bundles;
 pub mod rollback;
+mod rollback_v2;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 2.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 1.0;
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
 }

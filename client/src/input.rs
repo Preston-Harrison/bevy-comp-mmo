@@ -40,6 +40,10 @@ pub fn read_inputs(
     for message in server_messages.unreliable.iter() {
         match message {
             UMFromServer::IdPlayerInput(id_player_input) => {
+                info!(
+                    "Accepting input on frame {}, current frame is {}",
+                    id_player_input.input.frame, frame.0
+                );
                 input_rollback.accept_input(*id_player_input);
                 rollback_request.request(id_player_input.input.frame);
             }
