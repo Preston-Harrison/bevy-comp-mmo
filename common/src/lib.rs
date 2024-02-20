@@ -5,9 +5,8 @@ use bevy_renet::renet::Bytes;
 use serde::{Deserialize, Serialize};
 
 pub mod bundles;
-pub mod rollback;
 mod game;
-mod rollback_v2;
+pub mod rollback;
 pub mod schedule;
 
 pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 1.0;
@@ -166,7 +165,10 @@ impl GameSync {
         } else if TypeId::of::<T>() == TypeId::of::<Player>() {
             unsafe { &*(&self.players as *const _ as *const _) }
         } else {
-            panic!("Game sync does not contain component of type {:?}", std::any::type_name::<T>());
+            panic!(
+                "Game sync does not contain component of type {:?}",
+                std::any::type_name::<T>()
+            );
         }
     }
 }

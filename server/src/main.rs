@@ -1,4 +1,4 @@
-use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, utils::HashMap};
+use bevy::{prelude::*, utils::HashMap};
 use bevy_renet::{
     renet::{
         transport::{NetcodeServerTransport, ServerAuthentication, ServerConfig},
@@ -9,15 +9,12 @@ use bevy_renet::{
 };
 use common::{
     bundles::PlayerLogicBundle,
-    rollback::{InputRollback, RollbackPlugin, RollbackRequest, SyncFrameCount, ROLLBACK_WINDOW},
-    schedule::{GameSchedule, GameSchedulePlugin},
+    rollback::{InputRollback, RollbackPluginServer, RollbackRequest, SyncFrameCount},
+    schedule::{ServerSchedule, ServerSchedulePlugin},
     GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer, ServerObject,
     UMFromClient, UMFromServer,
 };
-use std::{
-    net::UdpSocket,
-    time::{Duration, SystemTime},
-};
+use std::{net::UdpSocket, time::SystemTime};
 
 #[cfg(feature = "debug")]
 mod ui;
@@ -41,6 +38,9 @@ fn main() {
 
     #[cfg(not(feature = "debug"))]
     {
+        use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin};
+        use std::time::Duration;
+
         app.add_plugins(LogPlugin::default());
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
             Duration::from_secs_f32(common::FRAME_DURATION_SECONDS as f32),
@@ -60,8 +60,8 @@ fn main() {
     #[cfg(feature = "debug")]
     app.add_plugins(ui::UIPlugin);
 
-    app.add_plugins(GameSchedulePlugin);
-    app.add_plugins(RollbackPlugin);
+    app.add_plugins(ServerSchedulePlugin);
+    app.add_plugins(RollbackPluginServer);
 
     let server = RenetServer::new(ConnectionConfig::default());
     app.insert_resource(server);
@@ -85,13 +85,10 @@ fn main() {
     app.add_systems(
         FixedUpdate,
         (
-            sync_game,
-            receive_message_system,
-            process_inputs,
-            handle_events_system,
-        )
-            .chain()
-            .in_set(GameSchedule::Main),
+            receive_message_system.in_set(ServerSchedule::InputHandling),
+            handle_events_system.in_set(ServerSchedule::Connections),
+            sync_game.in_set(ServerSchedule::GameSync),
+        ),
     );
     app.run();
 }
@@ -152,7 +149,8 @@ fn receive_message_system(
                         continue;
                     };
                     if framed_input.frame < frame_count.0
-                        && frame_count.0 - framed_input.frame > ROLLBACK_WINDOW as u64
+                        && frame_count.0 - framed_input.frame
+                            > input_rollback.get_rollback_window() as u64
                     {
                         warn!(
                             "Ignoring old input from client {} for frame {} (current frame {})",
@@ -269,26 +267,4 @@ fn handle_events_system(
             }
         }
     }
-}
-
-fn process_inputs(
-    input_rollback: Res<InputRollback>,
-    mut players: Query<(&Player, &mut Transform)>,
-    frame_count: Res<SyncFrameCount>,
-    time: Res<Time>,
-) {
-    let players = players
-        .iter_mut()
-        .map(|(pos, transform)| (pos, transform.into_inner()))
-        .collect::<Vec<_>>();
-
-    if !input_rollback.get_latest().0.is_empty() {
-        info!("Processing inputs on frame {}", frame_count.0);
-    }
-
-    common::process_input(
-        input_rollback.get_latest(),
-        players.into_iter(),
-        time.delta_seconds(),
-    );
 }

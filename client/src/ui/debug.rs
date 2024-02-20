@@ -49,7 +49,9 @@ pub fn update_input_counters(
 ) {
     for (mut text, mut input_counter) in text_q.iter_mut() {
         let local_input = input_counter.player_id == local_player.id
-            && rollback.get_latest().0.contains_key(&local_player.id);
+            && rollback
+                .get_latest()
+                .is_some_and(|x| x.contains_key(&local_player.id));
         let remote_input = messages.unreliable.iter().any(|msg| {
             if let UMFromServer::IdPlayerInput(input) = msg {
                 input.player_id == input_counter.player_id

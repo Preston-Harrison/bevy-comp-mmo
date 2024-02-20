@@ -1,6 +1,6 @@
 use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
 
-use crate::{rollback_v2::InputRollback, Player};
+use crate::{rollback::InputRollback, Player};
 
 #[derive(ScheduleLabel, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct GameLogic;

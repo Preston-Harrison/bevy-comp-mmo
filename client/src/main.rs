@@ -9,8 +9,8 @@ use bevy_renet::{
 };
 use clap::Parser;
 use common::{
-    rollback::RollbackPlugin,
-    schedule::{GameSchedule, GameSchedulePlugin},
+    rollback::RollbackPluginClient,
+    schedule::{ClientSchedule, ClientSchedulePlugin},
     PlayerId, ServerEntityMap,
 };
 use events::{handle_login, send_login};
@@ -19,7 +19,6 @@ use std::{net::UdpSocket, time::SystemTime};
 use ui::UIPlugin;
 
 mod events;
-mod game_sync;
 mod input;
 mod messages;
 mod spawn;
@@ -44,14 +43,10 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .add_state::<AppState>()
-        .add_plugins(GameSchedulePlugin)
-        .add_plugins(RollbackPlugin)
+        .add_plugins(ClientSchedulePlugin)
+        .add_plugins(RollbackPluginClient)
         .add_plugins(UIPlugin)
         .add_systems(Startup, send_login)
-        .add_systems(
-            FixedUpdate,
-            messages::receive_messages.in_set(GameSchedule::Init),
-        )
         .add_systems(
             FixedUpdate,
             handle_login.run_if(in_state(AppState::MainMenu)),
@@ -59,14 +54,12 @@ fn main() {
         .add_systems(
             FixedUpdate,
             (
-                common::rollback::init_rollback_for_frame,
-                events::handle_game_events,
-                input::read_inputs,
-                input::broadcast_local_input,
-                input::process_inputs,
+                messages::receive_messages.in_set(ClientSchedule::ServerMessageCollection),
+                (input::read_inputs, input::broadcast_local_input)
+                    .chain()
+                    .in_set(ClientSchedule::InputCollection),
+                events::handle_game_events.in_set(ClientSchedule::ServerEventHandling),
             )
-                .chain()
-                .in_set(GameSchedule::Main)
                 .run_if(in_state(AppState::InGame)),
         )
         .init_resource::<ServerMessageBuffer>()

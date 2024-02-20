@@ -1,11 +1,12 @@
 /// First element rollback deques is the transform in the current frame. This is reset in `Rollback::Init`.
 /// Rollbacks are only valid after all local and remote input collection and game syncs.
-use bevy::{ecs::entity, prelude::*, utils::HashMap};
+use bevy::{prelude::*, utils::HashMap};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, hash::Hash};
 
 use crate::{
-    game::GameLogic, impl_inner, rollback, schedule::ClientSchedule, GameSync, Player, PlayerId, RawPlayerInput, ServerEntityMap
+    game::GameLogic, impl_inner, schedule::ClientSchedule, GameSync, IdPlayerInput, Player,
+    PlayerId, RawPlayerInput, ServerEntityMap,
 };
 
 pub mod time;
@@ -15,10 +16,6 @@ pub struct SyncFrameCount(pub u64);
 impl_inner!(SyncFrameCount, u64);
 
 impl SyncFrameCount {
-    fn has_been_initialized(&self) -> bool {
-        self.0 == 0
-    }
-
     fn increment(&mut self) {
         self.0 += 1;
     }
@@ -65,6 +62,10 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
 
     pub fn get_latest(&self) -> Option<&HashMap<K, V>> {
         self.get_n_frames_ago(0)
+    }
+
+    pub fn get_rollback_window(&self) -> usize {
+        self.rollback_window
     }
 
     fn delete_n_frames(&mut self, frames: u64) {
@@ -154,7 +155,22 @@ pub type PlayerRollback = RollbackTracker<Entity, Player>;
 #[derive(Resource)]
 pub struct ComponentRollbacks(Vec<Box<dyn ComponentRollback>>);
 
+impl ComponentRollbacks {
+    pub fn new(frame: u64) -> Self {
+        Self(vec![
+            Box::new(TransformRollback::new(frame, DEFAULT_ROLLBACK_WINDOW)),
+            Box::new(PlayerRollback::new(frame, DEFAULT_ROLLBACK_WINDOW)),
+        ])
+    }
+}
+
 pub type InputRollback = RollbackTracker<PlayerId, RawPlayerInput>;
+
+impl InputRollback {
+    pub fn accept_input(&mut self, input: IdPlayerInput) {
+        self.set_value_at_frame(input.player_id, input.input.raw, input.input.frame);
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct RollbackRequest(Option<u64>);
@@ -184,7 +200,11 @@ fn handle_rollback(world: &mut World) {
     let game_sync_request = world
         .get_resource_mut::<GameSyncRequest>()
         .and_then(|mut x| x.0.take());
-    let rollback_request = world.get_resource_mut::<RollbackRequest>().unwrap().0.take();
+    let rollback_request = world
+        .get_resource_mut::<RollbackRequest>()
+        .unwrap()
+        .0
+        .take();
     let frame_count = world.get_resource::<SyncFrameCount>().unwrap().0;
 
     // Pop transform out of world so it can be edited mutably alongside world.
@@ -230,11 +250,13 @@ fn handle_rollback(world: &mut World) {
     world.insert_resource(component_rollbacks);
 }
 
-fn frame_update(mut frame_count: ResMut<SyncFrameCount>, mut input_rollback: ResMut<InputRollback>) {
+fn frame_update(
+    mut frame_count: ResMut<SyncFrameCount>,
+    mut input_rollback: ResMut<InputRollback>,
+) {
     frame_count.increment();
     input_rollback.init_current_frame(frame_count.0);
 }
-
 
 /// Rollback plugin:
 /// - Update frame count
@@ -244,7 +266,6 @@ fn frame_update(mut frame_count: ResMut<SyncFrameCount>, mut input_rollback: Res
 pub struct RollbackPluginClient;
 
 impl Plugin for RollbackPluginClient {
-
     fn build(&self, app: &mut App) {
         app.add_systems(
             FixedUpdate,

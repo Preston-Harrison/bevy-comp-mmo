@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::schedule::GameSchedule;
+use common::schedule::ClientSchedule;
 
 use self::debug::SyncFrameCounter;
 
@@ -45,8 +45,7 @@ impl Plugin for UIPlugin {
                 debug::update_frame_counter,
             )
                 .chain()
-                .after(GameSchedule::Main)
-                .before(GameSchedule::Rollback),
+                .in_set(ClientSchedule::UI),
         );
     }
 }

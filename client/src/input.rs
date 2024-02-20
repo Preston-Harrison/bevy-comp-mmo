@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
     rollback::{InputRollback, RollbackRequest, SyncFrameCount},
-    IdPlayerInput, Player, RawPlayerInput, UMFromClient, UMFromServer,
+    IdPlayerInput, RawPlayerInput, UMFromClient, UMFromServer,
 };
 
 use crate::{messages::ServerMessageBuffer, LocalPlayer};
@@ -58,23 +58,13 @@ pub fn broadcast_local_input(
     mut client: ResMut<RenetClient>,
     frame: Res<SyncFrameCount>,
 ) {
-    let local_input = input_rollback.get_latest().0.get(&local_player.id);
+    let local_input = input_rollback
+        .get_latest()
+        .and_then(|x| x.get(&local_player.id));
     if let Some(input) = local_input {
         client.send_message(
             DefaultChannel::Unreliable,
             UMFromClient::PlayerInput(input.at_frame(frame.0)),
         );
     }
-}
-
-pub fn process_inputs(
-    input_rollback: Res<InputRollback>,
-    mut players: Query<(&Player, &mut Transform)>,
-    time: Res<Time>,
-) {
-    let players = players
-        .iter_mut()
-        .map(|(pos, transform)| (pos, transform.into_inner()));
-
-    common::process_input(&input_rollback.get_latest(), players, time.delta_seconds());
 }

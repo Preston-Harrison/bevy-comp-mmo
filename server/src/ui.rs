@@ -1,5 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
-use common::{rollback::SyncFrameCount, schedule::GameSchedule, Player, PlayerId};
+use common::{rollback::SyncFrameCount, schedule::ClientSchedule, Player, PlayerId};
 
 #[derive(Resource, Default)]
 pub struct InputTracker {
@@ -49,7 +49,7 @@ impl Plugin for UIPlugin {
                     update_frame_counter,
                 )
                     .chain()
-                    .after(GameSchedule::Main),
+                    .in_set(ClientSchedule::UI),
             );
     }
 }

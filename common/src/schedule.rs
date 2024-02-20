@@ -3,6 +3,7 @@ use bevy::prelude::*;
 #[derive(Hash, Debug, PartialEq, Eq, Clone, SystemSet)]
 pub enum ServerSchedule {
     InputHandling,
+    Connections,
     Rollback,
     GameSync,
     Debug,
@@ -17,6 +18,7 @@ impl Plugin for ServerSchedulePlugin {
             FixedUpdate,
             (
                 ServerSchedule::InputHandling,
+                ServerSchedule::Connections,
                 ServerSchedule::Rollback,
                 ServerSchedule::GameSync,
                 ServerSchedule::Debug,
@@ -29,9 +31,9 @@ impl Plugin for ServerSchedulePlugin {
 
 #[derive(Hash, Debug, PartialEq, Eq, Clone, SystemSet)]
 pub enum ClientSchedule {
-    ServerMessages,
+    ServerMessageCollection,
     InputCollection,
-    EventCollection,
+    ServerEventHandling,
     Rollback,
     UI,
     FrameUpdate,
@@ -44,9 +46,9 @@ impl Plugin for ClientSchedulePlugin {
         app.configure_sets(
             FixedUpdate,
             (
-                ClientSchedule::ServerMessages,
+                ClientSchedule::ServerMessageCollection,
                 ClientSchedule::InputCollection,
-                ClientSchedule::EventCollection,
+                ClientSchedule::ServerEventHandling,
                 ClientSchedule::Rollback,
                 ClientSchedule::UI,
                 ClientSchedule::FrameUpdate,
