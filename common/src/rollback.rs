@@ -226,11 +226,11 @@ pub fn resimulate_last_n_frames(
             info!(frame, ?input_for_frame);
         }
 
-        super::process_input(
-            input_for_frame,
-            mutable_transforms,
-            super::FRAME_DURATION_SECONDS as f32,
-        );
+        // super::process_input(
+        //     input_for_frame,
+        //     mutable_transforms,
+        //     super::FRAME_DURATION_SECONDS as f32,
+        // );
 
         let next_frame = player_transforms
             .iter()

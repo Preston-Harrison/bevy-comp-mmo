@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{any::TypeId, time::SystemTime};
 
 use bevy::{prelude::*, utils::HashMap};
 use bevy_renet::renet::Bytes;
@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 
 pub mod bundles;
 pub mod rollback;
+mod game;
 mod rollback_v2;
 pub mod schedule;
 
 pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 1.0;
+
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
 }
@@ -156,6 +158,19 @@ pub struct GameSync {
     pub players: HashMap<ServerObject, Player>,
 }
 
+impl GameSync {
+    // @FIXME: oh dear, probably should test this.
+    pub fn get<T: Component>(&self) -> &HashMap<ServerObject, T> {
+        if TypeId::of::<T>() == TypeId::of::<Transform>() {
+            unsafe { &*(&self.transforms as *const _ as *const _) }
+        } else if TypeId::of::<T>() == TypeId::of::<Player>() {
+            unsafe { &*(&self.players as *const _ as *const _) }
+        } else {
+            panic!("Game sync does not contain component of type {:?}", std::any::type_name::<T>());
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Unreliable Message from Client
 pub enum UMFromClient {
@@ -173,17 +188,26 @@ impl ServerObject {
 }
 
 #[derive(Default, Resource)]
-pub struct ServerEntityMap(pub HashMap<ServerObject, Entity>);
+pub struct ServerEntityMap(HashMap<ServerObject, Entity>);
 
-pub fn process_input<'a, I>(input_buffer: &InputBuffer, players: I, delta_time: f32)
-where
-    I: IntoIterator<Item = (&'a Player, &'a mut Transform)>,
-{
-    for (player, transform) in players {
-        if let Some(input) = input_buffer.0.get(&player.id) {
-            transform.translation.x += input.x as f32 * player.speed * delta_time;
-            transform.translation.y += input.y as f32 * player.speed * delta_time;
+impl ServerEntityMap {
+    /// Returns `Err` if the `ServerObject` is already in the map.
+    pub fn insert(&mut self, server_object: ServerObject, entity: Entity) -> Result<(), ()> {
+        // @TODO: better errors
+        if self.0.contains_key(&server_object) {
+            Err(())
+        } else {
+            self.0.insert(server_object, entity);
+            Ok(())
         }
+    }
+
+    pub fn get(&self, server_object: &ServerObject) -> Option<&Entity> {
+        self.0.get(server_object)
+    }
+
+    pub fn remove(&mut self, server_object: &ServerObject) -> Option<Entity> {
+        self.0.remove(server_object)
     }
 }
 
