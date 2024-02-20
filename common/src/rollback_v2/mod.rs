@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, hash::Hash};
 
 use crate::{
-    game::GameLogic, impl_inner, rollback, GameSync, PlayerId, RawPlayerInput, ServerEntityMap,
+    game::GameLogic, impl_inner, rollback, schedule::ClientSchedule, GameSync, Player, PlayerId, RawPlayerInput, ServerEntityMap
 };
 
 pub mod time;
@@ -85,29 +85,25 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
     }
 }
 
-trait FrameFromWorld {
+trait ComponentRollback: Sync + Send {
     fn new_frame_from_world(&mut self, world: &mut World);
-}
 
-impl FrameFromWorld for RollbackTracker<Entity, Transform> {
-    fn new_frame_from_world(&mut self, world: &mut World) {
-        let mut query = world.query::<(Entity, &Transform)>();
-        let current_frame = world.get_resource::<SyncFrameCount>().unwrap().0;
-        self.init_current_frame(current_frame);
-
-        for (entity, transform) in query.iter(world) {
-            self.set_value_at_frame(entity, *transform, current_frame);
-        }
-    }
-}
-
-trait FrameFromGameSync {
     fn rollback_and_sync(&mut self, world: &mut World, game_sync: &GameSync);
 
     fn rollback_and_update_world(&mut self, frames: u64, world: &mut World);
 }
 
-impl <T: Component + Clone>FrameFromGameSync for RollbackTracker<Entity, T> {
+impl<T: Component + Clone> ComponentRollback for RollbackTracker<Entity, T> {
+    fn new_frame_from_world(&mut self, world: &mut World) {
+        let mut query = world.query::<(Entity, &T)>();
+        let current_frame = world.get_resource::<SyncFrameCount>().unwrap().0;
+        self.init_current_frame(current_frame);
+
+        for (entity, component) in query.iter(world) {
+            self.set_value_at_frame(entity, component.clone(), current_frame);
+        }
+    }
+
     /// Syncs `T` in world to current game sync values, rolls back history to game sync frame
     /// and sets the current history frame to the game sync frame.
     fn rollback_and_sync(&mut self, world: &mut World, game_sync: &GameSync) {
@@ -144,13 +140,19 @@ impl <T: Component + Clone>FrameFromGameSync for RollbackTracker<Entity, T> {
 
         for (entity, component) in frame_values.iter() {
             // @FIXME this can happen with despawns, need to soft delete and hard delete after rollback window has elapsed.
-            let mut entity = world.get_entity_mut(*entity).expect("Entity in rollback does not exist");
+            let mut entity = world
+                .get_entity_mut(*entity)
+                .expect("Entity in rollback does not exist");
             entity.insert(component.clone());
         }
     }
 }
 
 pub type TransformRollback = RollbackTracker<Entity, Transform>;
+pub type PlayerRollback = RollbackTracker<Entity, Player>;
+
+#[derive(Resource)]
+pub struct ComponentRollbacks(Vec<Box<dyn ComponentRollback>>);
 
 pub type InputRollback = RollbackTracker<PlayerId, RawPlayerInput>;
 
@@ -178,63 +180,94 @@ impl GameSyncRequest {
 }
 
 fn handle_rollback(world: &mut World) {
-    macro_rules! resource {
-        ($t:ty) => {
-            world.get_resource_mut::<$t>().unwrap()
-        };
-    }
-
-    // @TODO implement this for another component, not just transform.
-
     // Game sync resource may not exist here, as it does not exist on the server.
-    let game_sync_request = world.get_resource_mut::<GameSyncRequest>().and_then(|mut x| x.0.take());
-    let rollback_request = resource!(RollbackRequest).0.take();
-    let frame_count = resource!(SyncFrameCount).0;
+    let game_sync_request = world
+        .get_resource_mut::<GameSyncRequest>()
+        .and_then(|mut x| x.0.take());
+    let rollback_request = world.get_resource_mut::<RollbackRequest>().unwrap().0.take();
+    let frame_count = world.get_resource::<SyncFrameCount>().unwrap().0;
 
     // Pop transform out of world so it can be edited mutably alongside world.
-    let mut transform_rollback = world.remove_resource::<TransformRollback>().unwrap();
+    let mut component_rollbacks = world.remove_resource::<ComponentRollbacks>().unwrap();
 
     // @FIXME: could be alot of off by one errors here.
     if let Some(game_sync) = game_sync_request {
         let rollback_count = frame_count - game_sync.frame;
-        transform_rollback.rollback_and_sync(world, &game_sync);
+
+        for rollback in component_rollbacks.0.iter_mut() {
+            rollback.rollback_and_sync(world, &game_sync);
+        }
 
         for _ in 0..rollback_count {
             world.run_schedule(GameLogic);
-            transform_rollback.new_frame_from_world(world);
+            for rollback in component_rollbacks.0.iter_mut() {
+                rollback.new_frame_from_world(world);
+            }
         }
     } else if let Some(rollback_frame) = rollback_request {
         let rollback_count = frame_count - rollback_frame;
-        transform_rollback.rollback_and_update_world(rollback_count, world);
+        for rollback in component_rollbacks.0.iter_mut() {
+            rollback.rollback_and_update_world(rollback_count, world);
+        }
 
         for _ in 0..rollback_count {
             world.run_schedule(GameLogic);
-            transform_rollback.new_frame_from_world(world);
+            for rollback in component_rollbacks.0.iter_mut() {
+                rollback.new_frame_from_world(world);
+            }
         }
     }
 
     // All rollbacking has been done by this point, now simulate the current frame.
     world.run_schedule(GameLogic);
+
     // Track new component values in the current frame.
-    transform_rollback.new_frame_from_world(world);
+    for rollback in component_rollbacks.0.iter_mut() {
+        rollback.new_frame_from_world(world);
+    }
 
     // Add back component rollbacks.
-    world.insert_resource(transform_rollback);
-
-    // Initialize next frame.
-    resource!(SyncFrameCount).increment();
-    resource!(InputRollback).init_current_frame(frame_count + 1);
+    world.insert_resource(component_rollbacks);
 }
+
+fn frame_update(mut frame_count: ResMut<SyncFrameCount>, mut input_rollback: ResMut<InputRollback>) {
+    frame_count.increment();
+    input_rollback.init_current_frame(frame_count.0);
+}
+
 
 /// Rollback plugin:
 /// - Update frame count
 /// - Initialize input tracker
 /// - Collect inputs and game sync, and record rollback requests and game sync requests
 /// - Handle rollback requests and game sync requests with `handle_rollback`
-pub struct RollbackPlugin;
+pub struct RollbackPluginClient;
 
-impl Plugin for RollbackPlugin {
+impl Plugin for RollbackPluginClient {
+
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, handle_rollback);
+        app.add_systems(
+            FixedUpdate,
+            (
+                handle_rollback.in_set(ClientSchedule::Rollback),
+                frame_update.in_set(ClientSchedule::FrameUpdate),
+            ),
+        );
+    }
+}
+
+pub struct RollbackPluginServer;
+
+impl Plugin for RollbackPluginServer {
+    fn build(&self, app: &mut App) {
+        use crate::schedule::ServerSchedule;
+
+        app.add_systems(
+            FixedUpdate,
+            (
+                handle_rollback.in_set(ServerSchedule::Rollback),
+                frame_update.in_set(ServerSchedule::FrameUpdate),
+            ),
+        );
     }
 }
