@@ -35,7 +35,7 @@ pub enum ClientSchedule {
     InputCollection,
     ServerEventHandling,
     Rollback,
-    UI,
+    ServerReactive,
     FrameUpdate,
 }
 
@@ -50,10 +50,17 @@ impl Plugin for ClientSchedulePlugin {
                 ClientSchedule::InputCollection,
                 ClientSchedule::ServerEventHandling,
                 ClientSchedule::Rollback,
-                ClientSchedule::UI,
+                ClientSchedule::ServerReactive,
                 ClientSchedule::FrameUpdate,
             )
                 .chain(),
         );
     }
+}
+
+#[derive(States, Default, Debug, Clone, Eq, PartialEq, Hash)]
+pub enum ClientState {
+    #[default]
+    MainMenu,
+    InGame,
 }

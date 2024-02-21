@@ -1,16 +1,15 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    bundles::PlayerLogicBundle,
-    rollback::{GameSyncRequest, SyncFrameCount},
-    Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer,
+    bundles::PlayerLogicBundle, rollback::{ComponentRollbacks, GameSyncRequest, InputRollback, RollbackRequest, SyncFrameCount}, schedule::ClientState, Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer
 };
 
 use crate::{
-    messages::ServerMessageBuffer, spawn::get_player_sprite_bundle, AppState, LocalPlayer,
+    messages::ServerMessageBuffer, spawn::get_player_sprite_bundle, LocalPlayer,
 };
 
 pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer>) {
+    info!("Sending login");
     client.send_message(
         DefaultChannel::ReliableOrdered,
         ROMFromClient::PlayerLogin(PlayerLogin {
@@ -21,24 +20,26 @@ pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer
 
 pub fn handle_login(
     mut commands: Commands,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut next_state: ResMut<NextState<ClientState>>,
     server_messages: Res<ServerMessageBuffer>,
-    mut frame: ResMut<SyncFrameCount>,
-    mut game_sync_req: ResMut<GameSyncRequest>,
 ) {
+    info!("Checking for login initial sync");
     for message in server_messages.reliable_ordered.iter() {
         match message {
             ROMFromServer::GameSync(game_sync) => {
                 info!("Initial game sync");
                 let init_frame =
-                    game_sync.frame + common::frames_since_unix_time(game_sync.unix_time);
-                frame.0 = init_frame;
+                    game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) + 2;
                 info!("Starting game from frame: {}", init_frame);
 
-                game_sync_req.request(game_sync.clone());
+                commands.insert_resource(SyncFrameCount(init_frame));
+                commands.insert_resource(ComponentRollbacks::from_frame(init_frame - 1));
+                commands.insert_resource(GameSyncRequest::new(game_sync.clone()));
+                commands.insert_resource(RollbackRequest::default());
+                commands.insert_resource(InputRollback::from_frame(init_frame));
 
                 commands.spawn(Camera2dBundle::default());
-                next_state.set(AppState::InGame);
+                next_state.set(ClientState::InGame);
             }
             _ => {}
         }

@@ -9,6 +9,7 @@ use bevy_renet::{
 };
 use common::{
     bundles::PlayerLogicBundle,
+    game::GameLogicPlugin,
     rollback::{InputRollback, RollbackPluginServer, RollbackRequest, SyncFrameCount},
     schedule::{ServerSchedule, ServerSchedulePlugin},
     GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer, ServerObject,
@@ -62,6 +63,7 @@ fn main() {
 
     app.add_plugins(ServerSchedulePlugin);
     app.add_plugins(RollbackPluginServer);
+    app.add_plugins(GameLogicPlugin);
 
     let server = RenetServer::new(ConnectionConfig::default());
     app.insert_resource(server);
@@ -199,12 +201,16 @@ fn receive_message_system(
                 continue;
             };
 
+            info!("Player trying to login");
+
             if clients.players.contains_key(&client_id) {
                 warn!("Client {} already logged in", client_id);
                 continue;
             }
             clients.players.insert(client_id, login.id);
             let entity = PlayerLogicBundle::new(login.id, ServerObject::rand());
+
+            info!("Sending connection game sync");
             server.send_message(
                 client_id,
                 DefaultChannel::ReliableOrdered,

@@ -5,11 +5,11 @@ use bevy_renet::renet::Bytes;
 use serde::{Deserialize, Serialize};
 
 pub mod bundles;
-mod game;
+pub mod game;
 pub mod rollback;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 1.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 5.0;
 
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)

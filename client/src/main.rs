@@ -9,12 +9,14 @@ use bevy_renet::{
 };
 use clap::Parser;
 use common::{
+    game::GameLogicPlugin,
     rollback::RollbackPluginClient,
-    schedule::{ClientSchedule, ClientSchedulePlugin},
+    schedule::{ClientSchedule, ClientSchedulePlugin, ClientState},
     PlayerId, ServerEntityMap,
 };
 use events::{handle_login, send_login};
 use messages::ServerMessageBuffer;
+use spawn::attach_player_sprite;
 use std::{net::UdpSocket, time::SystemTime};
 use ui::UIPlugin;
 
@@ -30,37 +32,40 @@ struct Args {
     id: u64,
 }
 
-#[derive(States, Default, Debug, Clone, Eq, PartialEq, Hash)]
-enum AppState {
-    #[default]
-    MainMenu,
-    InGame,
-}
-
 fn main() {
     let args = Args::parse();
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
-        .add_state::<AppState>()
+        .add_state::<ClientState>()
         .add_plugins(ClientSchedulePlugin)
         .add_plugins(RollbackPluginClient)
+        .add_plugins(GameLogicPlugin)
         .add_plugins(UIPlugin)
         .add_systems(Startup, send_login)
         .add_systems(
             FixedUpdate,
-            handle_login.run_if(in_state(AppState::MainMenu)),
+            handle_login.run_if(in_state(ClientState::MainMenu)),
+        )
+        .add_systems(
+            FixedUpdate,
+            messages::receive_messages.in_set(ClientSchedule::ServerMessageCollection),
         )
         .add_systems(
             FixedUpdate,
             (
-                messages::receive_messages.in_set(ClientSchedule::ServerMessageCollection),
                 (input::read_inputs, input::broadcast_local_input)
                     .chain()
                     .in_set(ClientSchedule::InputCollection),
                 events::handle_game_events.in_set(ClientSchedule::ServerEventHandling),
             )
-                .run_if(in_state(AppState::InGame)),
+                .run_if(in_state(ClientState::InGame)),
+        )
+        .add_systems(
+            FixedUpdate,
+            attach_player_sprite
+                .in_set(ClientSchedule::ServerReactive)
+                .run_if(in_state(ClientState::InGame)),
         )
         .init_resource::<ServerMessageBuffer>()
         .init_resource::<ServerEntityMap>()

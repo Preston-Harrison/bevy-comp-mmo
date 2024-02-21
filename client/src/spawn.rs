@@ -1,4 +1,7 @@
 use bevy::prelude::*;
+use common::Player;
+
+use crate::LocalPlayer;
 
 pub fn get_player_sprite_bundle(remote: bool) -> SpriteBundle {
     SpriteBundle {
@@ -12,5 +15,17 @@ pub fn get_player_sprite_bundle(remote: bool) -> SpriteBundle {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+pub fn attach_player_sprite(
+    mut commands: Commands,
+    local_player: Res<LocalPlayer>,
+    mut player_q: Query<(Entity, &Player), Added<Player>>,
+) {
+    for (entity, player) in player_q.iter_mut() {
+        commands
+            .entity(entity)
+            .insert(get_player_sprite_bundle(player.id != local_player.id));
     }
 }

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-common = { path = "../common", features = ["server"] }
+common = { path = "../common" }
 bincode = { workspace = true }
 bevy = { workspace = true }
 bevy_renet = { workspace = true }

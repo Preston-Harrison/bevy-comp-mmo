@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::schedule::ClientSchedule;
+use common::schedule::{ClientSchedule, ClientState};
 
 use self::debug::SyncFrameCounter;
 
@@ -45,7 +45,8 @@ impl Plugin for UIPlugin {
                 debug::update_frame_counter,
             )
                 .chain()
-                .in_set(ClientSchedule::UI),
+                .in_set(ClientSchedule::ServerReactive)
+                .run_if(in_state(ClientState::InGame)),
         );
     }
 }

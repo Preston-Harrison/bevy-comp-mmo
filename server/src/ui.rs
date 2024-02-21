@@ -1,5 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
-use common::{rollback::SyncFrameCount, schedule::ClientSchedule, Player, PlayerId};
+use common::{rollback::SyncFrameCount, Player, PlayerId};
 
 #[derive(Resource, Default)]
 pub struct InputTracker {
@@ -47,9 +47,9 @@ impl Plugin for UIPlugin {
                     spawn_input_counters,
                     update_input_counters,
                     update_frame_counter,
+                    delete_input_counters,
                 )
-                    .chain()
-                    .in_set(ClientSchedule::UI),
+                    .chain(),
             );
     }
 }
@@ -82,6 +82,18 @@ fn spawn_input_counters(
                     },
                 ));
         });
+    }
+}
+
+fn delete_input_counters(
+    mut commands: Commands,
+    counter_q: Query<(Entity, &InputCounter)>,
+    player_q: Query<&Player>,
+) {
+    for (entity, counter) in counter_q.iter() {
+        if !player_q.iter().any(|p| p.id == counter.player_id) {
+            commands.entity(entity).despawn_recursive();
+        }
     }
 }
 
