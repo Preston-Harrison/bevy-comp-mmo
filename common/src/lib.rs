@@ -9,7 +9,7 @@ pub mod game;
 pub mod rollback;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 5.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 60.0;
 
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
@@ -60,6 +60,12 @@ macro_rules! impl_inner {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct PlayerId(pub u64);
 impl_inner!(PlayerId, u64);
+
+impl std::fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Player {}", self.0)
+    }
+}
 
 #[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Player {

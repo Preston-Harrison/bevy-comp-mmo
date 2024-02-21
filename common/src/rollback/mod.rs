@@ -6,7 +6,6 @@ use std::{collections::VecDeque, hash::Hash};
 
 use crate::{
     game::GameLogic,
-    impl_inner,
     schedule::{ClientSchedule, ClientState},
     GameSync, IdPlayerInput, Player, PlayerId, RawPlayerInput, ServerEntityMap,
 };
@@ -14,12 +13,21 @@ use crate::{
 pub mod time;
 
 #[derive(Resource, Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct SyncFrameCount(pub u64);
-impl_inner!(SyncFrameCount, u64);
+pub struct SyncFrameCount {
+    count: u64,
+}
 
 impl SyncFrameCount {
+    pub fn new(count: u64) -> Self {
+        Self { count }
+    }
+
     fn increment(&mut self) {
-        self.0 += 1;
+        self.count += 1;
+    }
+
+    pub fn count(&self) -> u64 {
+        self.count
     }
 }
 
@@ -62,6 +70,10 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
         self.history.get(n_frames as usize)
     }
 
+    fn get_at_frame(&self, frame: u64) -> Option<&HashMap<K, V>> {
+        self.get_n_frames_ago(self.current_frame - frame)
+    }
+
     pub fn get_latest(&self) -> Option<&HashMap<K, V>> {
         self.get_n_frames_ago(0)
     }
@@ -80,7 +92,9 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
     fn set_value_at_frame(&mut self, key: K, value: V, frame: u64) {
         assert!(
             self.current_frame >= frame,
-            "Cannot set component in the future"
+            "Cannot set value at frame. frame = {}, current_frame = {}",
+            frame,
+            self.current_frame
         );
         self.history
             .get_mut((self.current_frame - frame) as usize)
@@ -184,6 +198,9 @@ impl InputRollback {
     }
 }
 
+#[derive(Resource, Deref, DerefMut)]
+pub struct InputFrame(HashMap<PlayerId, RawPlayerInput>);
+
 #[derive(Resource, Default)]
 pub struct RollbackRequest(Option<u64>);
 
@@ -223,29 +240,50 @@ fn handle_rollback(world: &mut World) {
         .unwrap()
         .0
         .take();
-    let frame_count = world.get_resource::<SyncFrameCount>().unwrap().0;
+    let frame_count = world.get_resource::<SyncFrameCount>().unwrap().count();
 
     // Pop transform out of world so it can be edited mutably alongside world.
     let mut component_rollbacks = world.remove_resource::<ComponentRollbacks>().unwrap();
 
     macro_rules! simulate_frame {
         ($frame:expr) => {
-            world.run_schedule(GameLogic);
-            for rollback in component_rollbacks.0.iter_mut() {
-                rollback.new_frame_from_world(world, $frame);
-            }
+            world.resource_scope(|world, input_rollback: Mut<'_, InputRollback>| {
+                // @TODO check unwrap_or_default is ok here.
+                let input_frame = InputFrame(
+                    input_rollback
+                        .get_at_frame($frame)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
+                world.insert_resource(input_frame);
+                world.run_schedule(GameLogic);
+                for rollback in component_rollbacks.0.iter_mut() {
+                    rollback.new_frame_from_world(world, $frame);
+                }
+                world.remove_resource::<InputFrame>();
+            });
         };
     }
 
-    info!("Input count for current frame is {:?}", world.get_resource::<InputRollback>().unwrap().get_latest().map(|v| v.len()));
+    info!(
+        "Input count for current frame is {:?}",
+        world
+            .get_resource::<InputRollback>()
+            .unwrap()
+            .get_latest()
+            .map(|v| v.len())
+    );
 
     'sim: {
         if let Some(game_sync) = game_sync_request {
-            info!("Applying game sync on frame {}, current frame is {}", game_sync.frame, frame_count);
+            info!(
+                "Applying game sync on frame {}, current frame is {}",
+                game_sync.frame, frame_count
+            );
             if game_sync.frame > frame_count {
                 warn!("Game sync frame is in the future, ignoring");
                 // @TODO handle rolling forward to game sync frame.
-                // simulate_frame!(frame_count);
+                simulate_frame!(frame_count);
                 break 'sim;
             }
             let rollback_count = frame_count - game_sync.frame;
@@ -274,9 +312,11 @@ fn handle_rollback(world: &mut World) {
                 component_rollbacks.0[0].get_current_frame()
             );
         } else if let Some(rollback_frame) = rollback_request {
-            info!("Applying rollback to frame {}, current frame is {}", rollback_frame, frame_count);
-            // @TODO don't allow rollbacks that go further than a game sync.
-            // @FIXME this panics
+            info!(
+                "Applying rollback to frame {}, current frame is {}",
+                rollback_frame, frame_count
+            );
+            // @TODO don't allow rollbacks that go further back than a game sync.
             let rollback_count = frame_count - rollback_frame;
             for rollback in component_rollbacks.0.iter_mut() {
                 rollback.rollback_and_update_world(rollback_count + 1, world);
@@ -301,7 +341,12 @@ fn frame_update(
     mut input_rollback: ResMut<InputRollback>,
 ) {
     frame_count.increment();
-    input_rollback.init_current_frame(frame_count.0);
+    info!("Incrementing frame to {}", frame_count.count());
+    input_rollback.init_current_frame(frame_count.count());
+    info!(
+        "Initializing input rollback for frame {}",
+        frame_count.count()
+    );
 }
 
 /// Rollback plugin:
@@ -331,7 +376,7 @@ impl Plugin for RollbackPluginServer {
         use crate::schedule::ServerSchedule;
 
         let init_frame = 1u64;
-        app.insert_resource(SyncFrameCount(init_frame));
+        app.insert_resource(SyncFrameCount::new(init_frame));
         app.insert_resource(ComponentRollbacks::from_frame(init_frame - 1));
         app.insert_resource(RollbackRequest::default());
         app.insert_resource(InputRollback::from_frame(init_frame));

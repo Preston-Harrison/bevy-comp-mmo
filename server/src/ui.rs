@@ -116,6 +116,6 @@ fn update_frame_counter(
     mut text_q: Query<(&mut Text, &SyncFrameCounter)>,
 ) {
     for (mut text, _) in text_q.iter_mut() {
-        text.sections[0].value = format!("Frame: {}", sync_frame_count.0);
+        text.sections[0].value = format!("Frame: {}", sync_frame_count.count());
     }
 }

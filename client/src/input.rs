@@ -33,7 +33,7 @@ pub fn read_inputs(
     if input != RawPlayerInput::default() {
         input_rollback.accept_input(IdPlayerInput {
             player_id: local_player.id,
-            input: input.at_frame(frame.0),
+            input: input.at_frame(frame.count()),
         });
     }
 
@@ -41,8 +41,10 @@ pub fn read_inputs(
         match message {
             UMFromServer::IdPlayerInput(id_player_input) => {
                 info!(
-                    "Accepting input on frame {}, current frame is {}",
-                    id_player_input.input.frame, frame.0
+                    "Accepting input on frame {} from {}, current frame is {}",
+                    id_player_input.input.frame,
+                    id_player_input.player_id,
+                    frame.count()
                 );
                 input_rollback.accept_input(*id_player_input);
                 rollback_request.request(id_player_input.input.frame);
@@ -64,7 +66,7 @@ pub fn broadcast_local_input(
     if let Some(input) = local_input {
         client.send_message(
             DefaultChannel::Unreliable,
-            UMFromClient::PlayerInput(input.at_frame(frame.0)),
+            UMFromClient::PlayerInput(input.at_frame(frame.count())),
         );
     }
 }

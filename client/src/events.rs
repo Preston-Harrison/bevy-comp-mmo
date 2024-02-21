@@ -1,12 +1,15 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    bundles::PlayerLogicBundle, rollback::{ComponentRollbacks, GameSyncRequest, InputRollback, RollbackRequest, SyncFrameCount}, schedule::ClientState, Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer
+    bundles::PlayerLogicBundle,
+    rollback::{
+        ComponentRollbacks, GameSyncRequest, InputRollback, RollbackRequest, SyncFrameCount,
+    },
+    schedule::ClientState,
+    Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer,
 };
 
-use crate::{
-    messages::ServerMessageBuffer, spawn::get_player_sprite_bundle, LocalPlayer,
-};
+use crate::{messages::ServerMessageBuffer, spawn::get_player_sprite_bundle, LocalPlayer};
 
 pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer>) {
     info!("Sending login");
@@ -27,12 +30,13 @@ pub fn handle_login(
     for message in server_messages.reliable_ordered.iter() {
         match message {
             ROMFromServer::GameSync(game_sync) => {
-                info!("Initial game sync");
+                info!("Initial game sync"); 
+                // Add one to initial frame to account for the frame we are currently on.
                 let init_frame =
-                    game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) + 2;
+                    game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) + 1;
                 info!("Starting game from frame: {}", init_frame);
 
-                commands.insert_resource(SyncFrameCount(init_frame));
+                commands.insert_resource(SyncFrameCount::new(init_frame));
                 commands.insert_resource(ComponentRollbacks::from_frame(init_frame - 1));
                 commands.insert_resource(GameSyncRequest::new(game_sync.clone()));
                 commands.insert_resource(RollbackRequest::default());

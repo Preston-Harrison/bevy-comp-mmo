@@ -105,7 +105,7 @@ fn sync_game(
 ) {
     timer.0.tick(time.delta());
     if timer.0.finished() {
-        info!("Syncing game on frame {}", frame_count.0);
+        info!("Syncing game on frame {}", frame_count.count());
         let game_sync = GameSync {
             transforms: transform_q
                 .iter()
@@ -115,7 +115,7 @@ fn sync_game(
                 .iter()
                 .map(|(server_obj, player)| (*server_obj, *player))
                 .collect(),
-            frame: frame_count.0,
+            frame: frame_count.count(),
             unix_time: common::get_unix_time(),
         };
         info!("{:?}", game_sync);
@@ -150,13 +150,15 @@ fn receive_message_system(
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
-                    if framed_input.frame < frame_count.0
-                        && frame_count.0 - framed_input.frame
+                    if framed_input.frame < frame_count.count()
+                        && frame_count.count() - framed_input.frame
                             > input_rollback.get_rollback_window() as u64
                     {
                         warn!(
                             "Ignoring old input from client {} for frame {} (current frame {})",
-                            client_id, framed_input.frame, frame_count.0
+                            client_id,
+                            framed_input.frame,
+                            frame_count.count()
                         );
                         continue;
                     }
@@ -168,6 +170,14 @@ fn receive_message_system(
                         .and_modify(|e| *e += 1)
                         .or_default();
 
+                    if framed_input.frame > frame_count.count() {
+                        warn!(
+                            "Received input in the future. framed_input.frame = {}, frame_count.count() = {}", 
+                            framed_input.frame,
+                            frame_count.count()
+                        );
+                    }
+
                     let id_input = IdPlayerInput {
                         player_id: *player_id,
                         input: framed_input,
@@ -175,7 +185,8 @@ fn receive_message_system(
                     input_rollback.accept_input(id_input);
                     info!(
                         "Accepting input for frame {} on frame {}",
-                        framed_input.frame, frame_count.0
+                        framed_input.frame,
+                        frame_count.count()
                     );
                     rollback_request.request(framed_input.frame);
                     server.broadcast_message_except(
@@ -228,7 +239,7 @@ fn receive_message_system(
                         .chain(std::iter::once((&entity.server_object, &entity.player)))
                         .map(|(server_obj, player)| (*server_obj, *player))
                         .collect(),
-                    frame: frame_count.0,
+                    frame: frame_count.count(),
                     unix_time: common::get_unix_time(),
                 }),
             );
