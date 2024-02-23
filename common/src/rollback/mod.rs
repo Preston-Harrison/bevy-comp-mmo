@@ -130,26 +130,26 @@ impl<T: Component + Clone + std::fmt::Debug> ComponentRollback for RollbackTrack
     /// and sets the current history frame to the game sync frame.
     fn rollback_and_sync(&mut self, world: &mut World, game_sync: &GameSync) {
         // @FIXME should use rollback_and_update_world since game syncs may not include all entities.
-        // add 2 as the current frame is one behind, and the game sync frame overwrites a frame.
         self.delete_n_frames(1 + self.current_frame - game_sync.frame);
         self.init_current_frame(game_sync.frame);
 
-        let mut se_map = world.remove_resource::<ServerEntityMap>().unwrap();
-
-        for (server_obj, component) in game_sync.get::<T>().iter() {
-            let entity = match se_map.get(server_obj) {
-                Some(entity) => *entity,
-                None => {
-                    let entity = world.spawn(*server_obj).id();
-                    se_map.insert(*server_obj, entity).unwrap();
-                    entity
-                }
+        world.resource_scope(|world: &mut World, mut se_map: Mut<ServerEntityMap>| {
+            let Some(component_updates) = game_sync.get::<T>() else {
+                return;
             };
-            world.entity_mut(entity).insert(component.clone());
-            self.set_value_at_frame(entity, component.clone(), game_sync.frame);
-        }
-
-        world.insert_resource(se_map);
+            for (server_obj, component) in component_updates.iter() {
+                let entity = match se_map.get(&server_obj) {
+                    Some(entity) => *entity,
+                    None => {
+                        let entity = world.spawn(*server_obj).id();
+                        se_map.insert(*server_obj, entity).unwrap();
+                        entity
+                    }
+                };
+                world.entity_mut(entity).insert(component.clone());
+                self.set_value_at_frame(entity, component.clone(), game_sync.frame);
+            }
+        });
     }
 
     fn rollback_and_update_world(&mut self, frames: u64, world: &mut World) {
@@ -248,7 +248,6 @@ fn handle_rollback(world: &mut World) {
     macro_rules! simulate_frame {
         ($frame:expr) => {
             world.resource_scope(|world, input_rollback: Mut<'_, InputRollback>| {
-                // @TODO check unwrap_or_default is ok here.
                 let input_frame = InputFrame(
                     input_rollback
                         .get_at_frame($frame)

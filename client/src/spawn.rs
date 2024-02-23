@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
 use common::Player;
 
 use crate::LocalPlayer;
@@ -26,6 +27,9 @@ pub fn attach_player_sprite(
     for (entity, player) in player_q.iter_mut() {
         commands
             .entity(entity)
-            .insert(get_player_sprite_bundle(player.id != local_player.id));
+            .insert(get_player_sprite_bundle(player.id != local_player.id))
+            .insert(Collider::ball(0.5))
+            .insert(RigidBody::KinematicPositionBased)
+            .insert(KinematicCharacterController::default());
     }
 }

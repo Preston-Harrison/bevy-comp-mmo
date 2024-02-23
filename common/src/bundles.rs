@@ -1,29 +1,11 @@
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use crate::{Player, PlayerId, ServerObject};
+use crate::Player;
 
 /// Probs will have collider & stuff later.
-#[derive(Bundle)]
-pub struct PlayerLogicBundle {
+#[derive(Bundle, Copy, Clone, Serialize, Deserialize, Debug)]
+pub struct PlayerData {
     pub player: Player,
-    pub server_object: ServerObject,
-    pub transform_bundle: TransformBundle,
-}
-
-impl PlayerLogicBundle {
-    pub fn new(player_id: PlayerId, server_object: ServerObject) -> Self {
-        Self {
-            player: Player {
-                id: player_id,
-                ..Default::default()
-            },
-            server_object,
-            transform_bundle: TransformBundle::default(),
-        }
-    }
-
-    pub fn with_transform(mut self, transform: Transform) -> Self {
-        self.transform_bundle.local = transform;
-        self
-    }
+    pub transform: Transform,
 }

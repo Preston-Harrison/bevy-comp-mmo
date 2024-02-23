@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy_renet::renet::{DefaultChannel, RenetClient};
 use common::{
-    bundles::PlayerLogicBundle,
     rollback::{
         ComponentRollbacks, GameSyncRequest, InputRollback, RollbackRequest, SyncFrameCount,
     },
@@ -30,7 +29,7 @@ pub fn handle_login(
     for message in server_messages.reliable_ordered.iter() {
         match message {
             ROMFromServer::GameSync(game_sync) => {
-                info!("Initial game sync"); 
+                info!("Initial game sync");
                 // Add one to initial frame to account for the frame we are currently on.
                 let init_frame =
                     game_sync.frame + common::frames_since_unix_time(game_sync.unix_time) + 1;
@@ -61,13 +60,14 @@ pub fn handle_game_events(
     for message in server_messages.reliable_ordered.iter() {
         match message {
             ROMFromServer::PlayerConnected {
-                player_id,
+                player_data,
                 server_object,
             } => {
-                if player_id != &local_player.id {
-                    info!("Spawning remote player with id {}", player_id.0);
+                if player_data.player.id != local_player.id {
+                    info!("Spawning remote player with id {}", player_data.player.id.0);
                     let eid = commands
-                        .spawn(PlayerLogicBundle::new(*player_id, *server_object))
+                        .spawn(*server_object)
+                        .insert(player_data.clone())
                         .insert(get_player_sprite_bundle(true))
                         .id();
                     server_entity_map.insert(*server_object, eid).unwrap();

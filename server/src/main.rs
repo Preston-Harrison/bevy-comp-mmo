@@ -8,7 +8,7 @@ use bevy_renet::{
     RenetServerPlugin,
 };
 use common::{
-    bundles::PlayerLogicBundle,
+    bundles::PlayerData,
     game::GameLogicPlugin,
     rollback::{InputRollback, RollbackPluginServer, RollbackRequest, SyncFrameCount},
     schedule::{ServerSchedule, ServerSchedulePlugin},
@@ -219,7 +219,12 @@ fn receive_message_system(
                 continue;
             }
             clients.players.insert(client_id, login.id);
-            let entity = PlayerLogicBundle::new(login.id, ServerObject::rand());
+
+            let server_object = ServerObject::rand();
+            let player_data = PlayerData {
+                player: Player { id: login.id, ..Default::default() },
+                transform: Transform::default()
+            };
 
             info!("Sending connection game sync");
             server.send_message(
@@ -229,14 +234,14 @@ fn receive_message_system(
                     transforms: transform_q
                         .iter()
                         .chain(std::iter::once((
-                            &entity.server_object,
-                            &entity.transform_bundle.local,
+                            &server_object,
+                            &player_data.transform,
                         )))
                         .map(|(server_obj, transform)| (*server_obj, *transform))
                         .collect(),
                     players: player_q
                         .iter()
-                        .chain(std::iter::once((&entity.server_object, &entity.player)))
+                        .chain(std::iter::once((&server_object, &player_data.player)))
                         .map(|(server_obj, player)| (*server_obj, *player))
                         .collect(),
                     frame: frame_count.count(),
@@ -246,11 +251,11 @@ fn receive_message_system(
             server.broadcast_message(
                 DefaultChannel::ReliableOrdered,
                 ROMFromServer::PlayerConnected {
-                    player_id: login.id,
-                    server_object: entity.server_object,
+                    player_data,
+                    server_object,
                 },
             );
-            commands.spawn(entity);
+            commands.spawn(server_object).insert(player_data);
         }
     }
 }

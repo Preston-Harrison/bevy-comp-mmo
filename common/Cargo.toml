@@ -10,4 +10,5 @@ bincode = { workspace = true }
 bevy = { workspace = true }
 bevy_renet = { workspace = true }
 serde = { workspace = true }
+bevy_rapier2d = { workspace = true }
 rand = "0.8.5"

@@ -1,7 +1,8 @@
-use std::{any::TypeId, time::SystemTime};
+use std::{any::{Any, TypeId}, time::SystemTime};
 
 use bevy::{prelude::*, utils::HashMap};
 use bevy_renet::renet::Bytes;
+use bundles::PlayerData;
 use serde::{Deserialize, Serialize};
 
 pub mod bundles;
@@ -123,7 +124,7 @@ pub struct IdPlayerInput {
 /// Reliable Ordered Message from Server
 pub enum ROMFromServer {
     PlayerConnected {
-        player_id: PlayerId,
+        player_data: PlayerData,
         server_object: ServerObject,
     },
     PlayerDisconnected(PlayerId),
@@ -154,6 +155,7 @@ pub enum UMFromServer {
 }
 impl_bytes!(UMFromServer);
 
+/// `GameSync` contains a (possibly incomplete) update of component values for server objects.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSync {
     pub frame: u64,
@@ -163,18 +165,20 @@ pub struct GameSync {
     pub players: HashMap<ServerObject, Player>,
 }
 
+macro_rules! cast {
+    ($v:expr, $t:ty) => {
+        ($v as &dyn Any).downcast_ref::<$t>().unwrap()
+    };
+}
+
 impl GameSync {
-    // @FIXME: oh dear, probably should test this.
-    pub fn get<T: Component>(&self) -> &HashMap<ServerObject, T> {
+    pub fn get<T: Component>(&self) -> Option<&HashMap<ServerObject, T>> {
         if TypeId::of::<T>() == TypeId::of::<Transform>() {
-            unsafe { &*(&self.transforms as *const _ as *const _) }
+            Some(cast!(&self.transforms, HashMap<ServerObject, T>))
         } else if TypeId::of::<T>() == TypeId::of::<Player>() {
-            unsafe { &*(&self.players as *const _ as *const _) }
+            Some(cast!(&self.players, HashMap<ServerObject, T>))
         } else {
-            panic!(
-                "Game sync does not contain component of type {:?}",
-                std::any::type_name::<T>()
-            );
+            None
         }
     }
 }
