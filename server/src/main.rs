@@ -1,4 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
+use bevy_rapier2d::prelude::*;
 use bevy_renet::{
     renet::{
         transport::{NetcodeServerTransport, ServerAuthentication, ServerConfig},
@@ -176,6 +177,7 @@ fn receive_message_system(
                             framed_input.frame,
                             frame_count.count()
                         );
+                        continue;
                     }
 
                     let id_input = IdPlayerInput {
@@ -222,8 +224,11 @@ fn receive_message_system(
 
             let server_object = ServerObject::rand();
             let player_data = PlayerData {
-                player: Player { id: login.id, ..Default::default() },
-                transform: Transform::default()
+                player: Player {
+                    id: login.id,
+                    ..Default::default()
+                },
+                transform: Transform::default(),
             };
 
             info!("Sending connection game sync");
@@ -233,10 +238,7 @@ fn receive_message_system(
                 ROMFromServer::GameSync(GameSync {
                     transforms: transform_q
                         .iter()
-                        .chain(std::iter::once((
-                            &server_object,
-                            &player_data.transform,
-                        )))
+                        .chain(std::iter::once((&server_object, &player_data.transform)))
                         .map(|(server_obj, transform)| (*server_obj, *transform))
                         .collect(),
                     players: player_q
@@ -255,7 +257,20 @@ fn receive_message_system(
                     server_object,
                 },
             );
-            commands.spawn(server_object).insert(player_data);
+            commands.spawn(server_object).insert(player_data).insert((
+                Collider::ball(16.0),
+                RigidBody::KinematicPositionBased,
+                KinematicCharacterController::default(),
+            )).insert(
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::rgb(1.0, 0.0, 0.0),
+                        custom_size: Some(Vec2::new(30.0, 30.0)),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            );
         }
     }
 }

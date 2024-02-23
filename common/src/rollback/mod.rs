@@ -264,15 +264,6 @@ fn handle_rollback(world: &mut World) {
         };
     }
 
-    info!(
-        "Input count for current frame is {:?}",
-        world
-            .get_resource::<InputRollback>()
-            .unwrap()
-            .get_latest()
-            .map(|v| v.len())
-    );
-
     'sim: {
         if let Some(game_sync) = game_sync_request {
             info!(

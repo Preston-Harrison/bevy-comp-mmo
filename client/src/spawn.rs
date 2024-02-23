@@ -28,7 +28,7 @@ pub fn attach_player_sprite(
         commands
             .entity(entity)
             .insert(get_player_sprite_bundle(player.id != local_player.id))
-            .insert(Collider::ball(0.5))
+            .insert(Collider::ball(16.0))
             .insert(RigidBody::KinematicPositionBased)
             .insert(KinematicCharacterController::default());
     }

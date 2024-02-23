@@ -1,26 +1,43 @@
-use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
+use bevy::{
+    ecs::schedule::ScheduleLabel,
+    prelude::*,
+    transform::systems::{propagate_transforms, sync_simple_transforms},
+};
 use bevy_rapier2d::{
+    control::KinematicCharacterController,
     plugin::{NoUserData, PhysicsSet, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
 };
 
-use crate::{rollback::InputFrame, Player};
+use crate::{rollback::InputFrame, Player, FRAME_DURATION_SECONDS};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub enum GameSet {
     PlayerMovement,
     Physics,
+    TransformPropagation,
 }
 
 #[derive(ScheduleLabel, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct GameLogic;
 
-pub fn move_player(mut player_q: Query<(&Player, &mut Transform)>, input_frame: Res<InputFrame>) {
+pub fn move_player(
+    mut player_q: Query<(&Player, &mut KinematicCharacterController)>,
+    input_frame: Res<InputFrame>,
+) {
     let delta_time = super::FRAME_DURATION_SECONDS as f32;
-    for (player, mut transform) in player_q.iter_mut() {
+    for (player, mut controller) in player_q.iter_mut() {
         if let Some(input) = input_frame.get(&player.id) {
-            transform.translation.x += input.x as f32 * player.speed * delta_time;
-            transform.translation.y += input.y as f32 * player.speed * delta_time;
+            if delta_time - FRAME_DURATION_SECONDS as f32 > 0.0001 {
+                warn!(
+                    "Delta time is not equal to frame duration: {} vs {}",
+                    delta_time, FRAME_DURATION_SECONDS
+                );
+            }
+            controller.translation = Some(Vec2::new(
+                input.x as f32 * player.speed * delta_time,
+                input.y as f32 * player.speed * delta_time,
+            ));
         }
     }
 }
@@ -30,8 +47,18 @@ pub struct GameLogicPlugin;
 impl Plugin for GameLogicPlugin {
     fn build(&self, app: &mut App) {
         app.init_schedule(GameLogic)
+            .configure_sets(
+                GameLogic,
+                (
+                    GameSet::PlayerMovement,
+                    GameSet::Physics,
+                    GameSet::TransformPropagation,
+                )
+                    .chain(),
+            )
             .add_plugins((
-                RapierPhysicsPlugin::<NoUserData>::default().with_default_system_setup(false),
+                RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(16.0)
+                    .with_default_system_setup(false),
                 RapierDebugRenderPlugin::default(),
             ))
             .add_systems(GameLogic, move_player.in_set(GameSet::PlayerMovement))
@@ -54,6 +81,9 @@ impl Plugin for GameLogicPlugin {
                         .in_set(PhysicsSet::StepSimulation),
                     RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::Writeback)
                         .in_set(PhysicsSet::Writeback),
+                    (sync_simple_transforms, propagate_transforms)
+                        .chain()
+                        .in_set(GameSet::TransformPropagation),
                 ),
             );
     }
