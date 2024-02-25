@@ -116,7 +116,9 @@ fn sync_game(
                 .iter()
                 .map(|(server_obj, player)| (*server_obj, *player))
                 .collect(),
-            frame: frame_count.count(),
+            // This game sync is sent before the current frame's simulation, so
+            // the frame it is current for is the previous frame.
+            frame: frame_count.count() - 1,
             unix_time: common::get_unix_time(),
         };
         info!("{:?}", game_sync);
@@ -246,7 +248,7 @@ fn receive_message_system(
                         .chain(std::iter::once((&server_object, &player_data.player)))
                         .map(|(server_obj, player)| (*server_obj, *player))
                         .collect(),
-                    frame: frame_count.count(),
+                    frame: frame_count.count() - 1,
                     unix_time: common::get_unix_time(),
                 }),
             );

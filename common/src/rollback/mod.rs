@@ -7,7 +7,7 @@ use std::{collections::VecDeque, hash::Hash};
 use crate::{
     game::GameLogic,
     schedule::{ClientSchedule, ClientState},
-    GameSync, IdPlayerInput, Player, PlayerId, RawPlayerInput, ServerEntityMap,
+    GameSync, IdPlayerInput, Player, PlayerId, RawPlayerInput, ServerEntityMap, ServerObject,
 };
 
 pub mod time;
@@ -129,9 +129,10 @@ impl<T: Component + Clone + std::fmt::Debug> ComponentRollback for RollbackTrack
     /// Syncs `T` in world to current game sync values, rolls back history to game sync frame
     /// and sets the current history frame to the game sync frame.
     fn rollback_and_sync(&mut self, world: &mut World, game_sync: &GameSync) {
-        // @FIXME should use rollback_and_update_world since game syncs may not include all entities.
-        self.delete_n_frames(1 + self.current_frame - game_sync.frame);
-        self.init_current_frame(game_sync.frame);
+        // @TEMP old code here instead of rollback_and_update_world
+        // self.delete_n_frames(1 + self.current_frame - game_sync.frame);
+        // self.init_current_frame(game_sync.frame);
+        self.rollback_and_update_world(1 + self.current_frame - game_sync.frame, world);
 
         world.resource_scope(|world: &mut World, mut se_map: Mut<ServerEntityMap>| {
             let Some(component_updates) = game_sync.get::<T>() else {
@@ -146,6 +147,10 @@ impl<T: Component + Clone + std::fmt::Debug> ComponentRollback for RollbackTrack
                         entity
                     }
                 };
+                info!(
+                    "Setting component {:?} for server object {:?}",
+                    component, server_obj
+                );
                 world.entity_mut(entity).insert(component.clone());
                 self.set_value_at_frame(entity, component.clone(), game_sync.frame);
             }
@@ -306,6 +311,14 @@ fn handle_rollback(world: &mut World) {
                 "Applying rollback to frame {}, current frame is {}",
                 rollback_frame, frame_count
             );
+
+            if world.get_resource::<InputRollback>().is_some_and(|ir| {
+                ir.get_at_frame(rollback_frame)
+                    .map_or(false, |f| f.is_empty())
+            }) {
+                panic!("Rollback frame has no input - why rollback at all?");
+            }
+
             // @TODO don't allow rollbacks that go further back than a game sync.
             let rollback_count = frame_count - rollback_frame;
             for rollback in component_rollbacks.0.iter_mut() {
@@ -317,7 +330,6 @@ fn handle_rollback(world: &mut World) {
                 simulate_frame!(frame_count - rollback_count + n);
             }
         } else {
-            info!("Simulating frame {} normally", frame_count);
             simulate_frame!(frame_count);
         }
     }
@@ -331,12 +343,7 @@ fn frame_update(
     mut input_rollback: ResMut<InputRollback>,
 ) {
     frame_count.increment();
-    info!("Incrementing frame to {}", frame_count.count());
     input_rollback.init_current_frame(frame_count.count());
-    info!(
-        "Initializing input rollback for frame {}",
-        frame_count.count()
-    );
 }
 
 /// Rollback plugin:

@@ -10,7 +10,7 @@ pub mod game;
 pub mod rollback;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 60.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 20.0;
 
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
@@ -96,10 +96,12 @@ impl Player {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RawPlayerInput {
-    pub x: i8,
-    pub y: i8,
+    pub x_move: i8,
+    pub y_move: i8,
+    pub shoot: bool,
+    pub x_aim: f32,
 }
 
 impl RawPlayerInput {
@@ -233,8 +235,4 @@ pub fn get_unix_time() -> f64 {
 pub fn frames_since_unix_time(unix_time: f64) -> u64 {
     let current_time = get_unix_time();
     ((current_time - unix_time) / FRAME_DURATION_SECONDS) as u64
-}
-
-pub fn is_server() -> bool {
-    std::env::var("SERVER").is_ok()
 }

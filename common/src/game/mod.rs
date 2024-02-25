@@ -25,19 +25,17 @@ pub fn move_player(
     mut player_q: Query<(&Player, &mut KinematicCharacterController)>,
     input_frame: Res<InputFrame>,
 ) {
-    let delta_time = super::FRAME_DURATION_SECONDS as f32;
     for (player, mut controller) in player_q.iter_mut() {
         if let Some(input) = input_frame.get(&player.id) {
-            if delta_time - FRAME_DURATION_SECONDS as f32 > 0.0001 {
-                warn!(
-                    "Delta time is not equal to frame duration: {} vs {}",
-                    delta_time, FRAME_DURATION_SECONDS
-                );
-            }
+            info!("Moving {} from input {:?}", player.id, input);
             controller.translation = Some(Vec2::new(
-                input.x as f32 * player.speed * delta_time,
-                input.y as f32 * player.speed * delta_time,
+                input.x_move as f32 * player.speed * FRAME_DURATION_SECONDS as f32,
+                input.y_move as f32 * player.speed * FRAME_DURATION_SECONDS as f32,
             ));
+
+            if input.shoot {
+                info!("Player {} is shooting", player.id);
+            }
         }
     }
 }

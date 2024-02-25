@@ -15,22 +15,32 @@ pub fn read_inputs(
     mut rollback_request: ResMut<RollbackRequest>,
     frame: Res<SyncFrameCount>,
 ) {
+    let mut had_input = false;
+
     // Collect local player input.
     let mut input = RawPlayerInput::default();
     if keyboard_input.pressed(KeyCode::W) {
-        input.y += 1;
+        input.y_move += 1;
+        had_input = true;
     }
     if keyboard_input.pressed(KeyCode::S) {
-        input.y -= 1;
+        input.y_move -= 1;
+        had_input = true;
     }
     if keyboard_input.pressed(KeyCode::A) {
-        input.x -= 1;
+        input.x_move -= 1;
+        had_input = true;
     }
     if keyboard_input.pressed(KeyCode::D) {
-        input.x += 1;
+        input.x_move += 1;
+        had_input = true;
+    }
+    if keyboard_input.pressed(KeyCode::Space) {
+        input.shoot = true;
+        had_input = true;
     }
 
-    if input != RawPlayerInput::default() {
+    if had_input {
         input_rollback.accept_input(IdPlayerInput {
             player_id: local_player.id,
             input: input.at_frame(frame.count()),
