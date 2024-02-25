@@ -53,11 +53,14 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
     }
 
     fn init_current_frame(&mut self, current_frame: u64) {
-        assert_eq!(
-            current_frame - 1,
-            self.current_frame,
-            "Skipped rollback frame"
-        );
+        if current_frame != self.current_frame + 1 {
+            panic!(
+                "Tracker for {} tried to initialize frame {} when internal frame state is {}",
+                std::any::type_name::<V>(),
+                current_frame,
+                self.current_frame
+            );
+        }
         self.current_frame = current_frame;
 
         self.history.push_front(HashMap::default());
@@ -71,6 +74,12 @@ impl<K: Eq + Hash, V> RollbackTracker<K, V> {
     }
 
     fn get_at_frame(&self, frame: u64) -> Option<&HashMap<K, V>> {
+        assert!(
+            self.current_frame >= frame,
+            "Cannot get value at frame. frame = {}, current_frame = {}",
+            frame,
+            self.current_frame
+        );
         self.get_n_frames_ago(self.current_frame - frame)
     }
 
@@ -268,7 +277,7 @@ impl GameSyncRequest {
         Self(Some(game_sync))
     }
     pub fn request(&mut self, game_sync: GameSync) {
-        // TODO - check if game sync is recent.
+        // @TODO - check if game sync is recent.
         self.0 = Some(game_sync);
     }
 }
@@ -317,9 +326,40 @@ fn handle_rollback(world: &mut World) {
                 game_sync.frame, frame_count
             );
             if game_sync.frame > frame_count {
-                warn!("Game sync frame is in the future, ignoring");
-                // @TODO handle rolling forward to game sync frame.
-                simulate_frame!(frame_count);
+                info!("Rolling forward to game sync frame");
+                let roll_forward_count = game_sync.frame - frame_count;
+                world.get_resource_mut::<SyncFrameCount>().unwrap().count = game_sync.frame + 1;
+                info!(
+                    "Input current frame is {}",
+                    world
+                        .get_resource::<InputRollback>()
+                        .unwrap()
+                        .tracker
+                        .current_frame
+                );
+                info!(
+                    "Component current frame is {}",
+                    component_rollbacks.0[0].get_current_frame()
+                );
+
+                for n in 0..=roll_forward_count {
+                    world
+                        .get_resource_mut::<InputRollback>()
+                        .unwrap()
+                        .init_current_frame(frame_count + n + 1);
+                }
+
+                for n in 0..=roll_forward_count {
+                    info!("Simulating step {} in game sync roll forward", n);
+                    simulate_frame!(frame_count + n);
+                }
+
+                for rollback in component_rollbacks.0.iter_mut() {
+                    rollback.rollback_and_sync(world, &game_sync);
+                }
+
+                simulate_frame!(game_sync.frame + 1);
+
                 break 'sim;
             }
             let rollback_count = frame_count - game_sync.frame;

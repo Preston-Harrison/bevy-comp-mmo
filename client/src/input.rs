@@ -58,7 +58,9 @@ pub fn read_inputs(
                 );
 
                 input_rollback.accept_input(*id_player_input);
-                rollback_request.request(id_player_input.input.frame);
+                if id_player_input.input.frame < frame.count() {
+                    rollback_request.request(id_player_input.input.frame);
+                }
             }
             _ => {}
         }

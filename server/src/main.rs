@@ -31,7 +31,7 @@ struct GameSyncTimer(Timer);
 
 impl Default for GameSyncTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(5.0, TimerMode::Repeating))
+        Self(Timer::from_seconds(3.0, TimerMode::Repeating))
     }
 }
 
@@ -150,13 +150,14 @@ fn receive_message_system(
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
+                    info!("Accepting input");
 
                     #[cfg(feature = "debug")]
                     input_tracker
                         .inputs
                         .entry(*player_id)
                         .and_modify(|e| *e += 1)
-                        .or_default();
+                        .or_insert(1);
 
                     let id_input = IdPlayerInput {
                         player_id: *player_id,
