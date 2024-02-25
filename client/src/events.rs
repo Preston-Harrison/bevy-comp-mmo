@@ -8,7 +8,7 @@ use common::{
     Player, PlayerLogin, ROMFromClient, ROMFromServer, ServerEntityMap, ServerObject, UMFromServer,
 };
 
-use crate::{messages::ServerMessageBuffer, spawn::get_player_sprite, LocalPlayer};
+use crate::{messages::ServerMessages, spawn::get_player_sprite, LocalPlayer};
 
 pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer>) {
     info!("Sending login");
@@ -23,7 +23,7 @@ pub fn send_login(mut client: ResMut<RenetClient>, local_player: Res<LocalPlayer
 pub fn handle_login(
     mut commands: Commands,
     mut next_state: ResMut<NextState<ClientState>>,
-    server_messages: Res<ServerMessageBuffer>,
+    server_messages: Res<ServerMessages>,
 ) {
     info!("Checking for login initial sync");
     for message in server_messages.reliable_ordered.iter() {
@@ -51,7 +51,7 @@ pub fn handle_login(
 
 pub fn handle_game_events(
     mut commands: Commands,
-    server_messages: Res<ServerMessageBuffer>,
+    server_messages: Res<ServerMessages>,
     local_player: Res<LocalPlayer>,
     mut server_entity_map: ResMut<ServerEntityMap>,
     player_q: Query<(Entity, &Player, &ServerObject)>,

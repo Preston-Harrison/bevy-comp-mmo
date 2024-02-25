@@ -15,9 +15,9 @@ use common::{
     PlayerId, ServerEntityMap,
 };
 use events::{handle_login, send_login};
-use messages::ServerMessageBuffer;
+use messages::{ServerMessages, ServerMessageBuffer};
 use spawn::attach_player_sprite;
-use std::{net::UdpSocket, time::SystemTime};
+use std::{net::UdpSocket, sync::OnceLock, time::SystemTime};
 use ui::UIPlugin;
 
 mod events;
@@ -30,10 +30,16 @@ mod ui;
 struct Args {
     #[arg(long, default_value_t = 0)]
     id: u64,
+
+    /// Mocked extra latency in milliseconds.
+    #[arg(short, long, default_value_t = 0.0)]
+    network_latency: f32,
 }
 
+static ARGS: OnceLock<Args> = OnceLock::new();
+
 fn main() {
-    let args = Args::parse();
+    ARGS.get_or_init(|| Args::parse());
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
@@ -54,9 +60,7 @@ fn main() {
         .add_systems(
             FixedUpdate,
             (
-                (input::read_inputs, input::broadcast_local_input)
-                    .chain()
-                    .in_set(ClientSchedule::InputCollection),
+                input::read_inputs.in_set(ClientSchedule::InputCollection),
                 events::handle_game_events.in_set(ClientSchedule::ServerEventHandling),
             )
                 .run_if(in_state(ClientState::InGame)),
@@ -67,11 +71,13 @@ fn main() {
                 .in_set(ClientSchedule::ServerReactive)
                 .run_if(in_state(ClientState::InGame)),
         )
+        .init_resource::<ServerMessages>()
+        // @TODO fix this
         .init_resource::<ServerMessageBuffer>()
         .init_resource::<ServerEntityMap>()
         .insert_resource(common::fixed_timestep_rate())
         .insert_resource(LocalPlayer {
-            id: PlayerId(args.id),
+            id: PlayerId(ARGS.get().unwrap().id),
         });
 
     app.add_plugins(RenetClientPlugin);
@@ -85,7 +91,7 @@ fn main() {
     let server_addr = "127.0.0.1:5000".parse().unwrap();
     let authentication = ClientAuthentication::Unsecure {
         server_addr,
-        client_id: args.id,
+        client_id: ARGS.get().unwrap().id,
         user_data: None,
         protocol_id: 0,
     };

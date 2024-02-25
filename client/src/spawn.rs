@@ -26,6 +26,7 @@ pub fn attach_player_sprite(
     transform_q: Query<&Transform>,
 ) {
     for (entity, player) in player_q.iter_mut() {
+        info!("Spawning attachments for {}", player.id);
         let transform = transform_q.get(entity).cloned().unwrap_or_default();
         commands
             .entity(entity)

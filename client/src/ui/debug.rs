@@ -4,7 +4,7 @@ use common::{
     Player, PlayerId, UMFromServer,
 };
 
-use crate::{messages::ServerMessageBuffer, LocalPlayer};
+use crate::{messages::ServerMessages, LocalPlayer};
 
 use super::UIRoot;
 
@@ -43,7 +43,7 @@ pub fn spawn_input_counters(
 
 pub fn update_input_counters(
     rollback: Res<InputRollback>,
-    messages: Res<ServerMessageBuffer>,
+    messages: Res<ServerMessages>,
     local_player: Res<LocalPlayer>,
     mut text_q: Query<(&mut Text, &mut InputCounter)>,
 ) {

@@ -1,3 +1,3 @@
 Issues:
-- Debug UI plugin for client might not be catching all remote inputs.
-- There's an off by one frame error somewhere, this is visible when the fps is 2 with a single client connected.
+- There's a one off error, something to do with the game sync most likely
+- Players spawn at 0, 0 and get stuck in each other and cannot move.

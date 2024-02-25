@@ -5,15 +5,16 @@ use common::{
     IdPlayerInput, RawPlayerInput, UMFromClient, UMFromServer,
 };
 
-use crate::{messages::ServerMessageBuffer, LocalPlayer};
+use crate::{messages::ServerMessages, LocalPlayer};
 
 pub fn read_inputs(
     mut input_rollback: ResMut<InputRollback>,
     local_player: Res<LocalPlayer>,
     keyboard_input: Res<Input<KeyCode>>,
-    server_messages: ResMut<ServerMessageBuffer>,
+    server_messages: ResMut<ServerMessages>,
     mut rollback_request: ResMut<RollbackRequest>,
     frame: Res<SyncFrameCount>,
+    mut client: ResMut<RenetClient>,
 ) {
     let mut had_input = false;
 
@@ -45,6 +46,11 @@ pub fn read_inputs(
             player_id: local_player.id,
             input: input.at_frame(frame.count()),
         });
+        // @TODO - apply mock input latency.
+        client.send_message(
+            DefaultChannel::Unreliable,
+            UMFromClient::PlayerInput(input),
+        );
     }
 
     for message in server_messages.unreliable.iter() {
@@ -64,21 +70,5 @@ pub fn read_inputs(
             }
             _ => {}
         }
-    }
-}
-
-pub fn broadcast_local_input(
-    input_rollback: Res<InputRollback>,
-    local_player: Res<LocalPlayer>,
-    mut client: ResMut<RenetClient>,
-) {
-    let local_input = input_rollback
-        .get_latest()
-        .and_then(|x| x.get(&local_player.id));
-    if let Some(input) = local_input {
-        client.send_message(
-            DefaultChannel::Unreliable,
-            UMFromClient::PlayerInput(*input),
-        );
     }
 }

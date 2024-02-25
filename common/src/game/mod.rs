@@ -27,6 +27,9 @@ pub fn move_player(
 ) {
     for (player, mut controller) in player_q.iter_mut() {
         if let Some(input) = input_frame.get(&player.id) {
+            if controller.translation.is_some() {
+                warn!("Overwriting translation for player {}", player.id);
+            }
             controller.translation = Some(Vec2::new(
                 input.x_move as f32 * player.speed * FRAME_DURATION_SECONDS as f32,
                 input.y_move as f32 * player.speed * FRAME_DURATION_SECONDS as f32,

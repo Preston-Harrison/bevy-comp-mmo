@@ -20,6 +20,7 @@ use std::{net::UdpSocket, time::SystemTime};
 
 #[cfg(feature = "debug")]
 mod ui;
+mod lobby;
 
 #[derive(Resource, Default)]
 struct Clients {

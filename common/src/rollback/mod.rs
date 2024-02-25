@@ -172,6 +172,7 @@ impl<T: Component + Clone + std::fmt::Debug> ComponentRollback for RollbackTrack
 
         // @FIXME handle things spawned after the rollback frame
         let Some(frame_values) = self.get_latest() else {
+            info!("No frame values for rollback");
             return;
         };
 
@@ -283,9 +284,6 @@ impl GameSyncRequest {
 }
 
 fn handle_rollback(world: &mut World) {
-    // @FIXME need to set current input buffer inside simulation, currently it's using the current
-    // frame, not the frame at time of rollback.
-
     // Game sync resource may not exist here, as it does not exist on the server.
     let game_sync_request = world
         .get_resource_mut::<GameSyncRequest>()
