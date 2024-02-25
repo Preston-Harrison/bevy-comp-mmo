@@ -11,7 +11,7 @@ pub fn read_inputs(
     mut input_rollback: ResMut<InputRollback>,
     local_player: Res<LocalPlayer>,
     keyboard_input: Res<Input<KeyCode>>,
-    server_messages: Res<ServerMessageBuffer>,
+    server_messages: ResMut<ServerMessageBuffer>,
     mut rollback_request: ResMut<RollbackRequest>,
     frame: Res<SyncFrameCount>,
 ) {
@@ -56,6 +56,7 @@ pub fn read_inputs(
                     id_player_input.player_id,
                     frame.count()
                 );
+
                 input_rollback.accept_input(*id_player_input);
                 rollback_request.request(id_player_input.input.frame);
             }
@@ -68,7 +69,6 @@ pub fn broadcast_local_input(
     input_rollback: Res<InputRollback>,
     local_player: Res<LocalPlayer>,
     mut client: ResMut<RenetClient>,
-    frame: Res<SyncFrameCount>,
 ) {
     let local_input = input_rollback
         .get_latest()
@@ -76,7 +76,7 @@ pub fn broadcast_local_input(
     if let Some(input) = local_input {
         client.send_message(
             DefaultChannel::Unreliable,
-            UMFromClient::PlayerInput(input.at_frame(frame.count())),
+            UMFromClient::PlayerInput(*input),
         );
     }
 }

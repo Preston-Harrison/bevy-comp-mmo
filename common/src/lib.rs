@@ -1,4 +1,7 @@
-use std::{any::{Any, TypeId}, time::SystemTime};
+use std::{
+    any::{Any, TypeId},
+    time::SystemTime,
+};
 
 use bevy::{prelude::*, utils::HashMap};
 use bevy_renet::renet::Bytes;
@@ -10,7 +13,7 @@ pub mod game;
 pub mod rollback;
 pub mod schedule;
 
-pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 20.0;
+pub const FRAME_DURATION_SECONDS: f64 = 1.0 / 5.0;
 
 pub fn fixed_timestep_rate() -> Time<Fixed> {
     Time::<Fixed>::from_seconds(FRAME_DURATION_SECONDS)
@@ -188,7 +191,7 @@ impl GameSync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Unreliable Message from Client
 pub enum UMFromClient {
-    PlayerInput(FramedPlayerInput),
+    PlayerInput(RawPlayerInput),
 }
 impl_bytes!(UMFromClient);
 

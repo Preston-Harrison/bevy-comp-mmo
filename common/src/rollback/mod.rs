@@ -7,7 +7,7 @@ use std::{collections::VecDeque, hash::Hash};
 use crate::{
     game::GameLogic,
     schedule::{ClientSchedule, ClientState},
-    GameSync, IdPlayerInput, Player, PlayerId, RawPlayerInput, ServerEntityMap, ServerObject,
+    GameSync, IdPlayerInput, Player, PlayerId, RawPlayerInput, ServerEntityMap,
 };
 
 pub mod time;
@@ -191,15 +191,56 @@ impl ComponentRollbacks {
     }
 }
 
-pub type InputRollback = RollbackTracker<PlayerId, RawPlayerInput>;
+#[derive(Resource)]
+pub struct InputRollback {
+    tracker: RollbackTracker<PlayerId, RawPlayerInput>,
+    future_frames: Vec<IdPlayerInput>,
+}
 
 impl InputRollback {
     pub fn from_frame(frame: u64) -> Self {
-        Self::new(frame, DEFAULT_ROLLBACK_WINDOW)
+        Self {
+            tracker: RollbackTracker::new(frame, DEFAULT_ROLLBACK_WINDOW),
+            future_frames: Vec::new(),
+        }
     }
 
     pub fn accept_input(&mut self, input: IdPlayerInput) {
-        self.set_value_at_frame(input.player_id, input.input.raw, input.input.frame);
+        if input.input.frame > self.tracker.current_frame {
+            self.future_frames.push(input);
+        } else {
+            self.tracker
+                .set_value_at_frame(input.player_id, input.input.raw, input.input.frame);
+        }
+    }
+
+    fn get_at_frame(&self, frame: u64) -> Option<&HashMap<PlayerId, RawPlayerInput>> {
+        self.tracker.get_at_frame(frame)
+    }
+
+    fn init_current_frame(&mut self, current_frame: u64) {
+        self.tracker.init_current_frame(current_frame);
+        let mut current_frame = Vec::new();
+        let mut future_frames = Vec::new();
+
+        for input in self.future_frames.drain(..) {
+            if input.input.frame == self.tracker.current_frame {
+                current_frame.push(input);
+            } else {
+                future_frames.push(input);
+            }
+        }
+
+        for frame in current_frame {
+            self.tracker
+                .set_value_at_frame(frame.player_id, frame.input.raw, frame.input.frame);
+        }
+
+        self.future_frames = future_frames;
+    }
+
+    pub fn get_latest(&self) -> Option<&HashMap<PlayerId, RawPlayerInput>> {
+        self.tracker.get_latest()
     }
 }
 

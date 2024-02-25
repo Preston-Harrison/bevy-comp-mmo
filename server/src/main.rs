@@ -11,7 +11,7 @@ use bevy_renet::{
 use common::{
     bundles::PlayerData,
     game::GameLogicPlugin,
-    rollback::{InputRollback, RollbackPluginServer, RollbackRequest, SyncFrameCount},
+    rollback::{InputRollback, RollbackPluginServer, SyncFrameCount},
     schedule::{ServerSchedule, ServerSchedulePlugin},
     GameSync, IdPlayerInput, Player, PlayerId, ROMFromClient, ROMFromServer, ServerObject,
     UMFromClient, UMFromServer,
@@ -116,9 +116,7 @@ fn sync_game(
                 .iter()
                 .map(|(server_obj, player)| (*server_obj, *player))
                 .collect(),
-            // This game sync is sent before the current frame's simulation, so
-            // the frame it is current for is the previous frame.
-            frame: frame_count.count() - 1,
+            frame: frame_count.count(),
             unix_time: common::get_unix_time(),
         };
         info!("{:?}", game_sync);
@@ -137,7 +135,6 @@ fn receive_message_system(
     player_q: Query<(&ServerObject, &Player)>,
     mut input_rollback: ResMut<InputRollback>,
     frame_count: Res<SyncFrameCount>,
-    mut rollback_request: ResMut<RollbackRequest>,
     #[cfg(feature = "debug")] mut input_tracker: ResMut<self::ui::InputTracker>,
 ) {
     for client_id in server.clients_id() {
@@ -148,23 +145,11 @@ fn receive_message_system(
             };
 
             match client_message {
-                UMFromClient::PlayerInput(framed_input) => {
+                UMFromClient::PlayerInput(raw_input) => {
                     let Some(player_id) = clients.players.get(&client_id) else {
                         warn!("Client {} not logged in", client_id);
                         continue;
                     };
-                    if framed_input.frame < frame_count.count()
-                        && frame_count.count() - framed_input.frame
-                            > input_rollback.get_rollback_window() as u64
-                    {
-                        warn!(
-                            "Ignoring old input from client {} for frame {} (current frame {})",
-                            client_id,
-                            framed_input.frame,
-                            frame_count.count()
-                        );
-                        continue;
-                    }
 
                     #[cfg(feature = "debug")]
                     input_tracker
@@ -173,26 +158,11 @@ fn receive_message_system(
                         .and_modify(|e| *e += 1)
                         .or_default();
 
-                    if framed_input.frame > frame_count.count() {
-                        warn!(
-                            "Received input in the future. framed_input.frame = {}, frame_count.count() = {}", 
-                            framed_input.frame,
-                            frame_count.count()
-                        );
-                        continue;
-                    }
-
                     let id_input = IdPlayerInput {
                         player_id: *player_id,
-                        input: framed_input,
+                        input: raw_input.at_frame(frame_count.count()),
                     };
                     input_rollback.accept_input(id_input);
-                    info!(
-                        "Accepting input for frame {} on frame {}",
-                        framed_input.frame,
-                        frame_count.count()
-                    );
-                    rollback_request.request(framed_input.frame);
                     server.broadcast_message_except(
                         client_id,
                         DefaultChannel::Unreliable,
@@ -259,20 +229,22 @@ fn receive_message_system(
                     server_object,
                 },
             );
-            commands.spawn(server_object).insert(player_data).insert((
-                Collider::ball(16.0),
-                RigidBody::KinematicPositionBased,
-                KinematicCharacterController::default(),
-            )).insert(
-                SpriteBundle {
+            commands
+                .spawn(server_object)
+                .insert(player_data)
+                .insert((
+                    Collider::ball(16.0),
+                    RigidBody::KinematicPositionBased,
+                    KinematicCharacterController::default(),
+                ))
+                .insert(SpriteBundle {
                     sprite: Sprite {
                         color: Color::rgb(1.0, 0.0, 0.0),
                         custom_size: Some(Vec2::new(30.0, 30.0)),
                         ..Default::default()
                     },
                     ..Default::default()
-                }
-            );
+                });
         }
     }
 }
